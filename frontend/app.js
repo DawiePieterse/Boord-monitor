@@ -1,10 +1,11 @@
-// The dashboard. One screen: a banner that answers "is the farm all right?"
-// at a glance, then every check underneath for when it is not.
+// The dashboard. One phone screen: a banner that answers "is the farm all
+// right?", then every check as a small tile - a coloured dot, a short name
+// and one number. Tap a tile for the whole story and what to do about it.
 //
-// Built for a phone pulled out of a pocket in the orchard: the answer is the
-// banner's colour, readable without glasses or a signal good enough to load
-// anything else. Everything below it is for the person who then has to fix
-// it, often by phone call to whoever is at the PC.
+// Built for a phone pulled out of a pocket in the orchard: the colours are
+// the answer, readable at a glance without scrolling. The words are one tap
+// away for whoever then has to fix it, often by phone call to whoever is at
+// the PC.
 
 const GROUPS = {
   farm: [
@@ -12,7 +13,7 @@ const GROUPS = {
     ["tailscale", "Tailscale"],
     ["pc", "Farm PC"],
     ["guards", "Safety nets"],
-    ["backups", "Google Drive backups"],
+    ["backups", "Drive backups"],
   ],
   remote: [
     ["farm", "The farm, seen from outside"],
@@ -20,13 +21,30 @@ const GROUPS = {
   ],
 };
 
+// The tile names. Full names stay in the sheet; a tile has room for about
+// seven letters, and five tiles have to fit across a phone.
+const SHORT = {
+  "Boord Owner": "Owner",
+  "Boord Notes": "Notes",
+  "Boord Labour": "Labour",
+  "Tailscale": "Online",
+  "Tailscale key": "Key",
+  "Published ports": "Ports",
+  "HTTPS certificate": "Cert",
+  "Running since": "Uptime",
+  "Watchdog log": "Restarts",
+  "Google Drive": "Drive",
+  "This watcher's Tailscale": "Online",
+  "This watcher's Tailscale key": "Key",
+};
+
 const STATUS_WORD = { ok: "OK", warn: "Check", fail: "Problem", off: "Not installed", unknown: "Unknown" };
+const STATUS_VALUE = { ok: "ok", warn: "!", fail: "✕", off: "off", unknown: "–" };
 const REFRESH_MS = 30000;
 
 let session = { role: "farm", admin: false };
 let last = null;
 let lastOkAt = null;
-const open = new Set(); // check ids whose detail is expanded, kept across refreshes
 
 const $ = (id) => document.getElementById(id);
 
@@ -48,64 +66,55 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+const short = (c) => SHORT[c.label] || c.label;
+
 function dot(status) {
-  return el("span", { class: `dot dot-${status}`, "aria-label": STATUS_WORD[status] || status });
+  return el("span", { class: `dot dot-${status}`, "aria-hidden": "true" });
 }
 
-// --- rendering ---------------------------------------------------------------
+// --- the compact screen ------------------------------------------------------
 
-function renderBanner(data) {
-  const banner = $("banner");
-  const problems = data.checks.filter((c) => c.status === "fail");
-  const warns = data.checks.filter((c) => c.status === "warn");
-  banner.className = `banner banner-${data.overall}`;
-  let title;
-  if (data.overall === "fail") {
-    title = problems.length === 1 ? `${problems[0].label}: problem` : `${problems.length} problems`;
-  } else if (data.overall === "warn") {
-    title = `All up · ${warns.length} to check`;
-  } else {
-    title = data.role === "remote" ? "Farm is reachable" : "All good";
+function tile(c) {
+  const value = c.value || STATUS_VALUE[c.status] || "";
+  const label = `${c.label}: ${STATUS_WORD[c.status] || c.status}. ${c.summary}`;
+  // A tile with a percentage is drawn as a meter: a bar says "nearly full"
+  // faster than any number can.
+  if (typeof c.pct === "number") {
+    const pct = Math.max(0, Math.min(100, c.pct));
+    return el("button", { class: `tile tile-meter tile-${c.status}`, type: "button", "aria-label": label, onclick: () => showCheck(c) },
+      el("span", { class: "tile-top" }, dot(c.status), el("span", { class: "tile-name" }, short(c))),
+      el("span", { class: "bar" }, el("span", { class: `bar-fill bar-${c.status}`, style: `width:${pct}%` })),
+      el("span", { class: "tile-value" }, value));
   }
-  $("banner-title").textContent = title;
-  $("checked-at").textContent = `Checked ${Monitor.time(data.checked_at)}`;
-  const list = $("banner-problems");
-  list.replaceChildren(...problems.map((c) => el("li", {}, el("b", {}, c.label), " - ", c.summary)));
-}
-
-function checkRow(c) {
-  const isOpen = open.has(c.id);
-  const actions = [];
-  if (c.url && c.status !== "off") {
-    actions.push(el("a", { class: "pill", href: c.url, target: "_blank", rel: "noopener" }, "Open"));
-  }
-  if (c.app && c.restartable && session.role === "farm" && last && last.role === "farm") {
-    actions.push(el("button", { class: "pill", type: "button", onclick: (e) => { e.stopPropagation(); askRestart(c); } }, "Restart"));
-  }
-  const meta = [];
-  if (c.version) meta.push(`v${String(c.version).replace(/^v/, "")}`);
-  if (c.tailnet === true) meta.push("Tailscale OK");
-  const hasDetail = c.detail && c.detail.length;
-  return el("li", { class: `check check-${c.status}` },
-    el("div", { class: "check-head", role: hasDetail ? "button" : null, tabindex: hasDetail ? "0" : null,
-      onclick: hasDetail ? () => { isOpen ? open.delete(c.id) : open.add(c.id); render(); } : null },
-      dot(c.status),
-      el("div", { class: "check-body" },
-        el("div", { class: "check-label" }, c.label,
-          meta.length ? el("span", { class: "meta" }, meta.join(" · ")) : null),
-        el("div", { class: "check-summary" }, c.summary)),
-      hasDetail ? el("span", { class: "chev" }, isOpen ? "▾" : "▸") : null),
-    actions.length ? el("div", { class: "check-actions" }, actions) : null,
-    hasDetail && isOpen ? el("pre", { class: "log" }, c.detail.join("\n")) : null);
+  return el("button", { class: `tile tile-${c.status}`, type: "button", "aria-label": label, onclick: () => showCheck(c) },
+    dot(c.status),
+    el("span", { class: "tile-name" }, short(c)),
+    el("span", { class: "tile-value" }, value));
 }
 
 function groupCard(title, checks, note) {
   if (!checks.length) return null;
   const worst = checks.some((c) => c.status === "fail") ? "fail"
     : checks.some((c) => c.status === "warn") ? "warn" : "ok";
-  return el("section", { class: "card" },
-    el("h2", {}, dot(worst), title, note ? el("span", { class: "meta" }, note) : null),
-    el("ul", { class: "checks" }, checks.map(checkRow)));
+  return el("section", { class: `card card-${worst}` },
+    el("h2", {}, title, note ? el("span", { class: "meta" }, note) : null),
+    el("div", { class: "tiles" }, checks.map(tile)));
+}
+
+function renderBanner(data) {
+  const problems = data.checks.filter((c) => c.status === "fail");
+  const warns = data.checks.filter((c) => c.status === "warn");
+  $("banner").className = `banner banner-${data.overall}`;
+  let title;
+  if (data.overall === "fail") title = problems.length === 1 ? "1 problem" : `${problems.length} problems`;
+  else if (data.overall === "warn") title = `All up · ${warns.length} to check`;
+  else title = data.role === "remote" ? "Farm is reachable" : "All good";
+  $("banner-title").textContent = title;
+  $("checked-at").textContent = Monitor.time(data.checked_at);
+  // One line per problem, cut to fit; the whole sentence is a tap away.
+  $("banner-problems").replaceChildren(...problems.map((c) =>
+    el("button", { class: "problem", type: "button", onclick: () => showCheck(c) },
+      el("b", {}, short(c)), " ", c.summary)));
 }
 
 function render() {
@@ -119,19 +128,58 @@ function render() {
   // screen shows both what the farm said about itself and what the outside
   // can see now - and when the farm stops answering, the last thing it said.
   if (last.role === "remote" && last.farm && last.farm.checks) {
-    const as = `as of ${Monitor.time(last.farm.checked_at)}`;
+    const as = Monitor.time(last.farm.checked_at);
     for (const [key, title] of GROUPS.farm) {
-      cards.push(groupCard(`Farm PC's report: ${title}`, last.farm.checks.filter((c) => c.group === key), as));
+      cards.push(groupCard(`Farm said: ${title}`, last.farm.checks.filter((c) => c.group === key), as));
     }
   }
   $("groups").replaceChildren(...cards.filter(Boolean));
-
-  const events = last.events || [];
-  $("events-card").hidden = !events.length;
-  $("events").replaceChildren(...events.slice(0, 15).map((e) =>
-    el("li", {}, el("span", { class: "muted" }, Monitor.time(e.at)), " ",
-      dot(e.to), el("b", {}, e.label), " ", STATUS_WORD[e.to] || e.to, ": ", e.summary)));
 }
+
+// --- the sheet ------------------------------------------------------------------
+
+function openSheet(...children) {
+  // Absent optional parts arrive as null; replaceChildren would print them.
+  $("sheet-body").replaceChildren(...children.filter(Boolean));
+  const sheet = $("sheet");
+  if (!sheet.open) sheet.showModal();
+}
+
+$("sheet-close").addEventListener("click", () => $("sheet").close());
+// A tap on the dimmed backdrop closes it too - the dialog element itself is
+// the backdrop's click target.
+$("sheet").addEventListener("click", (e) => { if (e.target === $("sheet")) $("sheet").close(); });
+
+function showCheck(c) {
+  const meta = [];
+  if (c.version) meta.push(`v${String(c.version).replace(/^v/, "")}`);
+  if (c.tailnet === true) meta.push("reachable over Tailscale");
+  if (c.local_ms != null) meta.push(`${c.local_ms} ms on the PC`);
+  const actions = [];
+  if (c.url && c.status !== "off") {
+    actions.push(el("a", { class: "btn btn-quiet", href: c.url, target: "_blank", rel: "noopener" }, "Open app"));
+  }
+  if (c.app && c.restartable && last && last.role === "farm") {
+    actions.push(el("button", { class: "btn", type: "button", onclick: () => { $("sheet").close(); askRestart(c); } }, "Restart"));
+  }
+  openSheet(
+    el("h2", { class: "sheet-title" }, dot(c.status), c.label, el("span", { class: `chip chip-${c.status}` }, STATUS_WORD[c.status] || c.status)),
+    el("p", { class: "sheet-summary" }, c.summary),
+    meta.length ? el("p", { class: "muted small" }, meta.join(" · ")) : null,
+    c.detail && c.detail.length ? el("pre", { class: "log" }, c.detail.join("\n")) : null,
+    actions.length ? el("div", { class: "row-actions" }, actions) : null);
+}
+
+$("history-btn").addEventListener("click", () => {
+  const events = (last && last.events) || [];
+  openSheet(
+    el("h2", { class: "sheet-title" }, "Recent changes"),
+    events.length
+      ? el("ul", { class: "events" }, events.slice(0, 30).map((e) =>
+        el("li", {}, el("span", { class: "muted" }, Monitor.time(e.at)), " ",
+          dot(e.to), el("b", {}, e.label), " ", STATUS_WORD[e.to] || e.to, ": ", e.summary)))
+      : el("p", { class: "muted" }, "Nothing has changed since the monitor started."));
+});
 
 // --- loading -----------------------------------------------------------------
 
@@ -145,7 +193,9 @@ async function load(force = false) {
     // Keep the last picture on screen, clearly marked as old. A blank page
     // would say less than "this is what it looked like at 04:10".
     $("offline").hidden = false;
-    $("offline-since").textContent = lastOkAt ? lastOkAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "earlier";
+    $("offline-since").textContent = lastOkAt
+      ? `the picture from ${lastOkAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+      : "nothing yet";
     if (!last) {
       $("banner").className = "banner banner-fail";
       $("banner-title").textContent = "Can't reach the monitor";
@@ -157,11 +207,10 @@ async function loadSession() {
   try {
     session = await Monitor.api("/api/session");
   } catch (e) { /* keep the defaults; load() reports the outage */ }
-  $("role").textContent = session.role === "remote" ? "Off-site watcher" : "Farm PC";
-  $("account").hidden = session.role !== "farm";
-  $("account").textContent = session.admin ? "Sign out" : "Sign in";
-  $("alerts-card").hidden = session.role !== "farm";
-  await renderAlerts();
+  $("role").textContent = session.role === "remote" ? "Off-site" : "Farm PC";
+  $("alerts-btn").hidden = session.role !== "farm";
+  const sub = await currentSub().catch(() => null);
+  $("alerts-dot").hidden = !sub;
 }
 
 // --- PIN -----------------------------------------------------------------------
@@ -202,16 +251,6 @@ async function needAdmin() {
   }
   return askPin();
 }
-
-$("account").addEventListener("click", async () => {
-  if (session.admin) {
-    await Monitor.api("/api/admin/logout", { method: "POST" });
-    await loadSession();
-    render();
-  } else if (await needAdmin()) {
-    render();
-  }
-});
 
 // --- restart -------------------------------------------------------------------
 
@@ -275,82 +314,103 @@ async function currentSub() {
   return reg.pushManager.getSubscription();
 }
 
-async function renderAlerts() {
-  if (session.role !== "farm") return;
-  const state = $("alerts-state");
-  const [on, test, off] = [$("alerts-on"), $("alerts-test"), $("alerts-off")];
-  on.hidden = test.hidden = off.hidden = true;
+// The alerts panel, in the sheet. Rebuilt after every change so its buttons
+// always match what this phone is actually signed up for.
+async function showAlerts(note) {
+  const n = session.subscribers || 0;
+  const phones = `${n} phone${n === 1 ? "" : "s"} signed up`;
+  const parts = [el("h2", { class: "sheet-title" }, "Alerts on this phone")];
+  const buttons = [];
   if (!pushSupported()) {
     // iPhone Safari only offers Web Push to a site opened from the Home
     // Screen. In an ordinary tab PushManager simply isn't there, and saying
     // "not supported" would send people looking for a different phone.
-    state.textContent = isIOS() && !isStandalone()
+    parts.push(el("p", {}, isIOS() && !isStandalone()
       ? "To get alerts on an iPhone: tap Share, then Add to Home Screen, and open Monitor from the Home Screen icon. Then come back here."
-      : "This browser cannot receive alerts.";
-    return;
-  }
-  const sub = await currentSub().catch(() => null);
-  const n = session.subscribers || 0;
-  if (sub) {
-    state.textContent = `On. This phone is told when something breaks and when it is fixed. (${n} phone${n === 1 ? "" : "s"} signed up.)`;
-    test.hidden = off.hidden = false;
-  } else if (Notification.permission === "denied") {
-    state.textContent = "Notifications are blocked for this app. Allow them in Settings → Notifications → Monitor, then reopen it.";
+      : "This browser cannot receive alerts."));
   } else {
-    state.textContent = `Off on this phone. (${n} phone${n === 1 ? "" : "s"} signed up.)`;
-    on.hidden = false;
+    const sub = await currentSub().catch(() => null);
+    if (sub) {
+      parts.push(el("p", {}, `On. This phone is told when something breaks and when it is fixed. (${phones}.)`));
+      buttons.push(el("button", { class: "btn", type: "button", onclick: sendTest }, "Send a test"));
+      buttons.push(el("button", { class: "btn btn-quiet", type: "button", onclick: alertsOff }, "Turn off"));
+    } else if (Notification.permission === "denied") {
+      parts.push(el("p", {}, "Notifications are blocked for this app. Allow them in Settings → Notifications → Monitor, then reopen it."));
+    } else {
+      parts.push(el("p", {}, `Off on this phone. (${phones}.)`));
+      buttons.push(el("button", { class: "btn", type: "button", onclick: alertsOn }, "Turn on alerts"));
+    }
   }
+  if (note) parts.push(el("p", { class: "muted" }, note));
+  if (session.admin) buttons.push(el("button", { class: "btn btn-quiet", type: "button", onclick: signOut }, "Sign out"));
+  parts.push(el("div", { class: "row-actions" }, buttons));
+  openSheet(...parts);
 }
 
-$("alerts-on").addEventListener("click", async () => {
+$("alerts-btn").addEventListener("click", () => showAlerts());
+
+async function alertsOn() {
   // The permission request has to be the first thing this tap does. iOS only
   // honours it as part of the user's gesture, and a PIN dialog awaited first
   // uses the gesture up - the request is then refused without ever showing.
   // So signing in is its own tap.
   if (!session.admin) {
-    if (await needAdmin()) $("alerts-state").textContent = "Signed in. Now tap Turn on alerts again.";
+    $("sheet").close();
+    if (await needAdmin()) await showAlerts("Signed in. Now tap Turn on alerts again.");
     return;
   }
   try {
     const perm = await Notification.requestPermission();
-    if (perm !== "granted") { await renderAlerts(); return; }
+    if (perm !== "granted") { await showAlerts(); return; }
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(session.push_key) });
     const label = `${isIOS() ? "iPhone" : "Phone"}, added ${new Date().toLocaleDateString([], { day: "numeric", month: "short" })}`;
     await Monitor.api("/api/push/subscribe", { method: "POST", body: { subscription: sub.toJSON(), label } });
     await loadSession();
+    await showAlerts();
   } catch (e) {
-    alert(`Could not turn on alerts: ${e.message}`);
+    await showAlerts(`Could not turn on alerts: ${e.message}`);
   }
-});
+}
 
-$("alerts-test").addEventListener("click", async () => {
-  if (!(await needAdmin())) return;
+async function sendTest() {
+  if (!session.admin) {
+    $("sheet").close();
+    if (!(await needAdmin())) return;
+  }
   try {
     const r = await Monitor.api("/api/push/test", { method: "POST" });
-    $("alerts-state").textContent = `Test sent to ${r.sent} of ${r.subscribers} phone(s).` + (r.failed ? ` ${r.failed} failed.` : "");
+    await showAlerts(`Test sent to ${r.sent} of ${r.subscribers} phone(s).` + (r.failed ? ` ${r.failed} failed.` : ""));
   } catch (e) {
-    alert(e.message);
+    await showAlerts(e.message);
   }
-});
+}
 
-$("alerts-off").addEventListener("click", async () => {
+async function alertsOff() {
   const sub = await currentSub();
   if (sub) {
     await Monitor.api("/api/push/unsubscribe", { method: "POST", body: { endpoint: sub.endpoint } }).catch(() => {});
     await sub.unsubscribe();
   }
   await loadSession();
-});
+  await showAlerts();
+}
+
+async function signOut() {
+  await Monitor.api("/api/admin/logout", { method: "POST" });
+  await loadSession();
+  await showAlerts();
+}
 
 // --- start -----------------------------------------------------------------------
 
 $("check-now").addEventListener("click", async () => {
-  $("check-now").disabled = true;
-  $("check-now").textContent = "Checking…";
+  const btn = $("check-now");
+  btn.disabled = true;
+  btn.classList.add("spinning");
   await load(true);
-  $("check-now").disabled = false;
-  $("check-now").textContent = "Check now";
+  btn.disabled = false;
+  btn.classList.remove("spinning");
 });
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
@@ -359,7 +419,7 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("service-worker.js").catch(() => {});
 }
 
-$("version").textContent = `Boord Monitor ${Monitor.VERSION}`;
+$("version").textContent = `v${Monitor.VERSION}`;
 loadSession();
 load();
 setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);

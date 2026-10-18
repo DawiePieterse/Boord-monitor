@@ -79,15 +79,40 @@ The **banner** at the top is the answer:
   getting full, the PC rebooted half an hour ago, or an app is answering
   with errors.
 - **Red, "N problems"**: something is broken now. Each problem is listed
-  under the banner.
+  under the banner, one line each. Tap a line to read the rest.
 
-Below the banner, every check is listed by group. Tap a check with **▸**
-to see its detail. For example, Published ports shows the PC's live
-mapping, and the watchdog log shows its last lines. Each app has **Open**,
-which takes you to the app itself.
+Below the banner, every check is a small **tile**, grouped by what it
+watches, and the whole farm fits on one phone screen:
 
-The page refreshes every 30 seconds. The monitor itself checks every
-minute. **Check now** runs the checks immediately.
+- The **dot** is the check's state: green is fine, amber needs a look, red
+  is broken and grey means not installed or can't be checked here.
+- The **name** is short (Owner for Boord Owner, Ports for Published ports,
+  Cert for the HTTPS certificate).
+- The **number** under it is the one worth knowing:
+
+  | Tile | Number |
+  | --- | --- |
+  | An app | how fast it answered, or *down* |
+  | Key, Cert | days until they expire |
+  | Ports | apps published correctly, e.g. 5/6 |
+  | Uptime, Watchdog, Heartbeat, backup folders | how long since boot, the last run, or the newest backup |
+  | Restarts | how many times the watchdog restarted an app in the last day |
+
+- **Disk** and **Memory** are bars: the fuller the bar, the fuller the disk
+  or memory.
+
+**Tap any tile** for the whole explanation and what to do about it. For
+example, Ports shows the PC's live mapping, and Restarts shows the
+watchdog's last log lines. An app's sheet has **Open app** and **Restart**.
+
+The three icons at the top right are:
+
+- the **clock**: recent changes;
+- the **bell**: alerts on this phone, with a small green dot when they are on;
+- the **circular arrow**: check now.
+
+The page refreshes every 30 seconds, and the monitor itself checks every
+minute.
 
 If your phone loses contact with the monitor, the last picture stays on
 screen with a note saying how old it is.
@@ -117,7 +142,7 @@ Alerts are **push notifications** from the farm PC to your phone.
 1. Open the monitor's address in Safari.
 2. Tap **Share**, then **Add to Home Screen**.
 3. Open **Monitor** from the Home Screen icon. Not from Safari.
-4. Scroll down to **Alerts on this phone** and tap **Turn on alerts**.
+4. Tap the **bell** at the top right, then **Turn on alerts**.
    Enter the PIN if asked, then tap **Turn on alerts** again, and allow
    notifications.
 5. Tap **Send a test**. A notification should arrive within a few seconds.
@@ -146,7 +171,7 @@ quiet, and it alerts you instead.
 
 ## 4. Restarting an app
 
-Sign in, then tap **Restart** on the app's card. Everyone using that app
+Tap the app's tile, then **Restart**, and enter the PIN if asked. Everyone using that app
 loses it for up to a minute. Phones keep what they scanned and send it once
 the app is back.
 

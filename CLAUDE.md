@@ -64,6 +64,7 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
 - **The app table** (`apps.py`) is also in Boord's `watchdog.ps1` and `heartbeat.ps1`, and the serve ports are in Boord's MANUAL.md. Change all of them together.
 - **Frontend changes need two bumps:** `VERSION` in `frontend/api.js` and `CACHE` in `frontend/service-worker.js`.
 - **Plain JS and CSS, no build step, no CDNs.** The phones are tailnet-only.
+- **The dashboard is one phone screen** (390 x 844). Each check is a tile showing its dot, a short name (`SHORT` in `app.js`) and `value`, an optional field of at most about six characters. A check with `pct` is drawn as a bar. The full sentence and detail open in a sheet. The smoke test fails if the phone layout needs scrolling.
 - **Every push must show a notification** (`service-worker.js`). iOS revokes push for a site that receives a push silently.
 - **Copied from Boord Labour:** `install.ps1`, `update_monitor_server.bat` and `scripts/release.sh`. Keep fixes flowing between the copies. The updater's import list must equal `requirements.txt` (a test checks this).
 
