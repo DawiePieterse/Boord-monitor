@@ -178,9 +178,14 @@ def run_once(sys: System) -> dict:
             if not _streaks and not _events:
                 _load_state()
             decision = evaluate(results, now)
+            # The number on the Home Screen icon: problems a phone has been
+            # told about and that are still broken. The same rule as the
+            # pushes, so the badge never counts a warning or a fail still
+            # inside its FAIL_AFTER grace.
+            alerting = sum(1 for s in _streaks.values() if s["alerted"])
             snapshot = {"role": config.ROLE, "checked_at": _stamp(now),
                         "overall": checks.worst(results), "groups": checks.GROUPS[config.ROLE],
-                        "checks": results,
+                        "alerting": alerting, "checks": results,
                         "events": list(reversed(_events[-50:]))}
             if config.ROLE == "remote":
                 snapshot["farm"] = _last_farm
@@ -189,7 +194,7 @@ def run_once(sys: System) -> dict:
             _save_state()
     for title, body, tag in compose(decision):
         try:
-            result = push.send(title, body, url=_alert_url(), tag=tag)
+            result = push.send(title, body, url=_alert_url(), tag=tag, badge=alerting)
             log.info("pushed %r: %s", title, result)
         except Exception as e:  # noqa: BLE001 - never let a push kill the loop
             log.warning("push %r failed: %s", title, e)

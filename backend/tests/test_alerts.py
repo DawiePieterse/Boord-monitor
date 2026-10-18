@@ -59,6 +59,20 @@ def test_recovery_is_announced(fake, pushed):
     assert pushed[1][1]["body"] == "Boord: fixed."
 
 
+def test_the_icon_badge_counts_what_is_still_broken(fake, pushed):
+    subscribe()
+    fake.down.add(8000)
+    run(fake, config.FAIL_AFTER - 1)
+    assert monitor.latest["alerting"] == 0  # still inside its grace
+    run(fake)
+    assert pushed[0][1]["badge"] == 1 and monitor.latest["alerting"] == 1
+    fake.down.clear()
+    run(fake)
+    assert pushed[1][1]["badge"] == 0  # the "back to normal" clears it
+    push.send("Farm: test", "hello")
+    assert "badge" not in pushed[2][1]  # a test push leaves it alone
+
+
 def test_reminder_while_still_broken(fake, pushed):
     subscribe()
     fake.down.add(8000)

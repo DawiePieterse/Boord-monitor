@@ -651,13 +651,27 @@ def drive_checks(sys: System) -> List[dict]:
 
 # --- devices on the tailnet --------------------------------------------------
 
-def read_device_list() -> Optional[List[tuple]]:
-    """[(tailscale name, label, boord id)] from data/devices.txt, or None when
-    there is no such file (then every device on the tailnet is shown)."""
-    rows = _config_lines(config.DEVICES_FILE)
-    if rows is None:
-        return None
-    return [(p[0], p[1] or p[0], p[2]) for p in (f + ["", ""] for f in rows) if p[0]]
+def read_device_list() -> tuple:
+    """([(tailscale name, label, boord id)] or None, {hidden names}) from
+    data/devices.txt.
+
+    A line starting with "-" hides that device: an old tablet still on the
+    tailnet, or someone's laptop nobody needs a tile for. The list is None
+    when the file names no devices to show - absent, or only hides - and
+    then every device on the tailnet is shown but the hidden ones. Without
+    that, hiding one retired tablet would mean listing every other device by
+    hand."""
+    shown, hidden = [], set()
+    for f in _config_lines(config.DEVICES_FILE) or []:
+        if f[0].startswith("-"):
+            name = f[0][1:].strip().lower()
+            if name:
+                hidden.add(name)
+            continue
+        p = f + ["", ""]
+        if p[0]:
+            shown.append((p[0], p[1] or p[0], p[2]))
+    return (shown or None), hidden
 
 
 _BOORD_ID = re.compile(r"^device-(\d+)$", re.IGNORECASE)
@@ -687,15 +701,15 @@ def device_checks(sys: System, status: Optional[dict]) -> List[dict]:
     tailnet, and every app with it, on a date that can be seen coming."""
     if not status or status.get("BackendState") != "Running":
         return []
+    listed, hidden = read_device_list()
     peers = [p for p in (status.get("Peer") or {}).values()
-             if isinstance(p, dict) and not p.get("ShareeNode")]
-    listed = read_device_list()
+             if isinstance(p, dict) and not p.get("ShareeNode") and not (_peer_names(p) & hidden)]
     boord = sys.boord_devices(config.BOORD_DB)
 
     if listed is None:
         wanted = [(n, n, "") for n in sorted({p.get("HostName") or "?" for p in peers}, key=str.lower)]
     else:
-        wanted = listed
+        wanted = [w for w in listed if w[0].lower() not in hidden]
 
     # First peer wins a shared name, as the old next(...) scan did.
     by_name = {}

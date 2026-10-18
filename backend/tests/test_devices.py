@@ -64,6 +64,16 @@ def test_list_names_and_orders_devices_and_reports_missing_ones(fake):
     assert "No device called" in d["dev.gone-tablet"]["summary"]
 
 
+def test_hidden_devices(fake):
+    fake.ts = ts_status(peers=[peer("device-01"), peer("old-tablet"), peer("andre-iphone")])
+    # Only hides: everything else on the tailnet is still shown.
+    configure("-old-tablet")
+    assert list(devices(fake)) == ["dev.andre-iphone", "dev.device-01"]
+    # With a list, a hide line also drops a listed name instead of warning.
+    configure("device-01 | Field 1", "old-tablet", "- old-tablet")
+    assert list(devices(fake)) == ["dev.device-01"]
+
+
 def test_boord_last_crate(fake):
     fake.ts = ts_status(peers=[peer("device-03")])
     fake.boord = {"device-03": {"station": "Block 7", "role": "field",

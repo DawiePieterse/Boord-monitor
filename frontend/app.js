@@ -94,7 +94,7 @@ function renderBanner(data) {
   else if (data.overall === "warn") title = `All up · ${warns.length} to check`;
   else title = data.role === "remote" ? "Farm is reachable" : "All good";
   $("banner-title").textContent = title;
-  $("checked-at").textContent = data.checked_at ? `Updated ${Monitor.time(data.checked_at)}` : "";
+  showUpdated();
   // One line per problem, cut to fit; the whole sentence is a tap away.
   $("banner-problems").replaceChildren(...problems.map((c) =>
     el("button", { class: "problem", type: "button", onclick: () => showCheck(c) },
@@ -102,6 +102,33 @@ function renderBanner(data) {
 }
 
 let drawn = null;
+
+// "Updated 07:20", and how long ago once that is longer than the monitor
+// should ever take. The server checks every minute, so a time three minutes
+// old means the monitor itself has stalled - and a stalled monitor is
+// exactly the one that can't push to say so. Turning orange is the only way
+// it can tell anyone. Run on a timer, not just on render: a stale report is
+// by definition one that hasn't changed.
+const STALE_MS = 3 * 60 * 1000;
+
+function showUpdated() {
+  const at = last && Monitor.parseServerDate(last.checked_at);
+  const node = $("checked-at");
+  if (!at) { node.textContent = ""; return; }
+  const stale = Date.now() - at.getTime() > STALE_MS;
+  // One line either way: the screen has no height to spare.
+  node.textContent = stale
+    ? `Last check ${Monitor.ago(last.checked_at)} - monitor stalled?`
+    : `Updated ${Monitor.time(last.checked_at)}`;
+  node.classList.toggle("stale", stale);
+}
+
+// The number on the Home Screen icon, kept in step whenever the page is
+// open. The service worker sets it from each push while the page is not.
+function showBadge() {
+  if (!last || typeof last.alerting !== "number" || !navigator.setAppBadge) return;
+  (last.alerting > 0 ? navigator.setAppBadge(last.alerting) : navigator.clearAppBadge()).catch(() => {});
+}
 
 function render() {
   if (!last) return;
@@ -181,6 +208,7 @@ async function load(force = false) {
     lastOkAt = new Date();
     $("offline").hidden = true;
     render();
+    showBadge();
   } catch (e) {
     // Keep the last picture on screen, clearly marked as old. A blank page
     // would say less than "this is what it looked like at 04:10".
@@ -433,13 +461,52 @@ async function signOut() {
 
 // --- start -----------------------------------------------------------------------
 
-$("check-now").addEventListener("click", async () => {
+async function checkNow() {
   const btn = $("check-now");
+  if (btn.disabled) return;
   btn.disabled = true;
   btn.classList.add("spinning");
   await load(true);
   btn.disabled = false;
   btn.classList.remove("spinning");
+}
+
+$("check-now").addEventListener("click", checkNow);
+
+// Pull down to check now, as in every iPhone list. The page never scrolls,
+// so any downward drag from the top is a pull. Not while a sheet or the
+// menu is open - there a drag means something else.
+const PULL_PX = 70;
+let pullFrom = null;
+let pulled = 0;
+
+function setPull(px) {
+  pulled = px;
+  const ptr = $("ptr");
+  ptr.style.transform = `translateY(${Math.min(px, PULL_PX + 20) - 40}px) rotate(${px * 4}deg)`;
+  ptr.style.opacity = String(Math.min(1, px / PULL_PX));
+  ptr.classList.toggle("ready", px >= PULL_PX);
+}
+
+document.addEventListener("touchstart", (e) => {
+  const busy = document.querySelector("dialog[open]") || !$("menu").hidden;
+  pullFrom = !busy && window.scrollY <= 0 && e.touches.length === 1 ? e.touches[0].clientY : null;
+}, { passive: true });
+
+document.addEventListener("touchmove", (e) => {
+  if (pullFrom === null) return;
+  // Halved, so the indicator lags the finger as iOS's does.
+  setPull(Math.max(0, (e.touches[0].clientY - pullFrom) / 2));
+}, { passive: true });
+
+document.addEventListener("touchend", () => {
+  if (pullFrom === null) return;
+  pullFrom = null;
+  const go = pulled >= PULL_PX;
+  $("ptr").classList.add("settle");
+  setPull(0);
+  setTimeout(() => $("ptr").classList.remove("settle"), 250);
+  if (go) checkNow();
 });
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
@@ -452,3 +519,4 @@ $("version").textContent = `v${Monitor.VERSION}`;
 loadSession();
 load();
 setInterval(() => { if (!document.hidden) load(); }, REFRESH_MS);
+setInterval(showUpdated, 15000);
