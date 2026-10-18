@@ -6,7 +6,7 @@
 //
 // Bump CACHE together with VERSION in api.js on every frontend change, so
 // installed phones fetch the new files.
-const CACHE = "boord-monitor-v6";
+const CACHE = "boord-monitor-v7";
 const SHELL = ["./", "./index.html", "./app.js", "./api.js", "./styles.css", "./manifest.json",
   "./icons/icon-192.png"];
 
@@ -47,14 +47,27 @@ self.addEventListener("push", (event) => {
   try { msg = event.data ? event.data.json() : {}; } catch (e) { msg = { body: event.data && event.data.text() }; }
   // iOS revokes push for a site that receives a push and shows nothing, so
   // every push must end in a notification, even a malformed one.
-  event.waitUntil(self.registration.showNotification(msg.title || "Boord Monitor", {
-    body: msg.body || "",
-    tag: msg.tag || "monitor",
-    renotify: true,
-    icon: "icons/icon-192.png",
-    data: { url: msg.url || "/" },
-  }));
+  event.waitUntil(Promise.all([
+    self.registration.showNotification(msg.title || "Boord Monitor", {
+      body: msg.body || "",
+      tag: msg.tag || "monitor",
+      renotify: true,
+      icon: "icons/icon-192.png",
+      data: { url: msg.url || "/" },
+    }),
+    setBadge(msg.badge),
+  ]));
 });
+
+// The number on the Home Screen icon: what is still broken, so a glance at
+// the phone says whether the farm is all right without opening anything. A
+// push without a count (the test push) leaves it as it is. Never allowed to
+// fail the push: the notification above is the part that must happen.
+function setBadge(n) {
+  const nav = self.navigator;
+  if (typeof n !== "number" || !nav || !nav.setAppBadge) return Promise.resolve();
+  return (n > 0 ? nav.setAppBadge(n) : nav.clearAppBadge()).catch(() => {});
+}
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();

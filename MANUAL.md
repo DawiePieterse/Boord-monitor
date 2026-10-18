@@ -294,6 +294,15 @@ The other two columns are optional. Keep names short: a tile has room for
 about six letters. If a listed name is no longer on the tailnet (renamed,
 or removed), its tile turns amber and says so.
 
+**Hiding a device.** Put `-` in front of its Tailscale name. A file with
+only such lines still shows every other device, so hiding one old tablet
+doesn't mean listing everything else:
+
+```
+-old-tablet
+-office-laptop
+```
+
 ## 7. The off-site watcher
 
 Run this on a machine that stays on, stays awake and is on the tailnet. The

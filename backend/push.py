@@ -115,16 +115,23 @@ def _webpush(sub: dict, payload: str) -> int:
         return e.response.status_code if e.response is not None else 0
 
 
-def send(title: str, body: str, url: str = "/", tag: str = "monitor") -> dict:
+def send(title: str, body: str, url: str = "/", tag: str = "monitor",
+         badge: Optional[int] = None) -> dict:
     """Pushes to every subscribed phone. A subscription the push service
     says is gone (404/410 - the app was removed from the Home Screen, or
     alerts were turned off in iOS Settings) is dropped, so it is not retried
     every minute forever. Only the farm drops them: the remote watcher's list
-    is a copy, and the farm's next bundle brings it back in line."""
+    is a copy, and the farm's next bundle brings it back in line.
+
+    `badge`, when given, is the number the service worker puts on the Home
+    Screen icon; a test push leaves it out, so it doesn't touch the badge."""
     subs = load_subs()
     if not subs or not os.path.exists(KEY_FILE):
         return {"sent": 0, "failed": 0, "subscribers": len(subs)}
-    payload = json.dumps({"title": title, "body": body, "url": url, "tag": tag})
+    message = {"title": title, "body": body, "url": url, "tag": tag}
+    if badge is not None:
+        message["badge"] = badge
+    payload = json.dumps(message)
     sent, failed, gone = 0, 0, []
     for sub in subs:
         try:

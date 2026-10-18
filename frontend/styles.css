@@ -119,6 +119,19 @@ button { font: inherit; color: inherit; }
 .menu-detail { color: var(--muted); }
 .menu-foot { padding: 8px 16px 10px; font-size: 12px; color: var(--muted); border-top: 6px solid var(--line); }
 
+/* Pull to refresh: a round button-like indicator that follows the drag and
+   turns blue once letting go will check. Fixed, so it takes no room. */
+.ptr {
+  position: fixed; top: calc(70px + env(safe-area-inset-top)); left: 50%; z-index: 5;
+  width: 36px; height: 36px; margin-left: -18px; border-radius: 50%; opacity: 0;
+  display: grid; place-items: center; background: var(--card); color: var(--muted);
+  box-shadow: 0 2px 10px rgba(0, 0, 0, .15); pointer-events: none;
+  transform: translateY(-40px);
+}
+.ptr.ready { color: var(--tint); }
+.ptr.settle { transition: transform .25s, opacity .25s; }
+.ptr svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+
 main { max-width: 760px; margin: 0 auto; padding: 6px 16px 12px; }
 
 /* --- the status card ---------------------------------------------------------- */
@@ -143,6 +156,8 @@ main { max-width: 760px; margin: 0 auto; padding: 6px 16px 12px; }
 .banner-text { display: flex; flex-direction: column; min-width: 0; }
 .banner-title { font-size: 20px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
 .banner-time { font-size: 13px; color: var(--muted); }
+/* The monitor itself has stopped checking: the only way it can say so. */
+.banner-time.stale { color: var(--warn-ink); font-weight: 600; }
 .banner-problems:empty { display: none; }
 .banner-problems { margin: 10px -14px -12px; border-top: .5px solid var(--line); }
 /* Each problem is a list row: name, the sentence cut to fit, a chevron. */
