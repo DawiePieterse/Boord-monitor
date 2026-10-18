@@ -27,6 +27,10 @@ NOW = dt.datetime(2026, 10, 18, 8, 0, 0)
 DNS = "farm-pc.tail1234.ts.net"
 
 
+def by_id(results):
+    return {c["id"]: c for c in results}
+
+
 def ts_status(state="Running", online=True, key_expiry=None, health=None, peers=None):
     me = {"DNSName": DNS + ".", "Online": online, "TailscaleIPs": ["100.64.0.1"]}
     if key_expiry:
@@ -176,7 +180,9 @@ def clean_state():
     import admin_auth
     import monitor
     import push
+    import system
     monitor.reset()
+    system._cache.clear()
     shutil.rmtree(config.DATA_DIR, ignore_errors=True)
     os.makedirs(config.DATA_DIR, exist_ok=True)
     admin_auth._failures, admin_auth._locked_until = 0, 0.0

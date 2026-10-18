@@ -7,39 +7,7 @@
 // away for whoever then has to fix it, often by phone call to whoever is at
 // the PC.
 
-const GROUPS = {
-  farm: [
-    ["apps", "Apps"],
-    ["tailscale", "Tailscale"],
-    ["pc", "Farm PC"],
-    ["guards", "Safety nets"],
-    ["backups", "Drive backups"],
-    ["devices", "Devices"],
-  ],
-  remote: [
-    ["farm", "The farm, seen from outside"],
-    ["watcher", "This watcher"],
-  ],
-};
-
-// The tile names. Full names stay in the sheet; a tile has room for about
-// seven letters, and five tiles have to fit across a phone.
-const SHORT = {
-  "Boord Owner": "Owner",
-  "Boord Notes": "Notes",
-  "Boord Labour": "Labour",
-  "Tailscale": "Online",
-  "Tailscale key": "Key",
-  "Published ports": "Ports",
-  "HTTPS certificate": "Cert",
-  "Running since": "Uptime",
-  "Watchdog log": "Restarts",
-  "Google Drive": "Drive",
-  "This watcher's Tailscale": "Online",
-  "This watcher's Tailscale key": "Key",
-};
-
-const STATUS_WORD = { ok: "OK", warn: "Check", fail: "Problem", off: "Not installed", unknown: "Unknown" };
+const STATUS_WORD = { ok: "OK", warn: "Check", fail: "Problem", off: "Off", unknown: "Unknown" };
 const STATUS_VALUE = { ok: "ok", warn: "!", fail: "✕", off: "off", unknown: "–" };
 const REFRESH_MS = 30000;
 
@@ -67,12 +35,11 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-// Boord's own device ids (device-01) are cut to "Dev 01" - the tile has room
-// for about six letters, and "device-…" nine times over says nothing. Any
-// other name can be set in data/devices.txt.
-const short = (c) => SHORT[c.label] || c.label.replace(/^device-(\d+)$/i, "Dev $1");
+// The backend names each tile (`short`, in checks.py next to the labels);
+// a report from an older farm has none, so fall back to the full label.
+const short = (c) => c.short || c.label;
 // A check may name its own state - a device that is merely switched off says
-// "Offline", where an app in the same grey says "Not installed".
+// "Offline", an app in the same grey "Not installed".
 const word = (c) => c.word || STATUS_WORD[c.status] || c.status;
 
 function dot(status) {
@@ -86,27 +53,36 @@ function tile(c) {
   const label = `${c.label}: ${word(c)}. ${c.summary}`;
   // A tile with a percentage is drawn as a meter: a bar says "nearly full"
   // faster than any number can.
-  if (typeof c.pct === "number") {
-    const pct = Math.max(0, Math.min(100, c.pct));
-    return el("button", { class: `tile tile-meter tile-${c.status}`, type: "button", "aria-label": label, onclick: () => showCheck(c) },
-      el("span", { class: "tile-top" }, dot(c.status), el("span", { class: "tile-name" }, short(c))),
-      el("span", { class: "bar" }, el("span", { class: `bar-fill bar-${c.status}`, style: `width:${pct}%` })),
-      el("span", { class: "tile-value" }, value));
-  }
-  return el("button", { class: `tile tile-${c.status}`, type: "button", "aria-label": label, onclick: () => showCheck(c) },
-    dot(c.status),
-    el("span", { class: "tile-name" }, short(c)),
+  const meter = typeof c.pct === "number";
+  const name = el("span", { class: "tile-name" }, short(c));
+  const body = meter
+    ? [el("span", { class: "tile-top" }, dot(c.status), name),
+       el("span", { class: "bar" }, el("span", { class: `bar-fill bar-${c.status}`, style: `width:${Math.max(0, Math.min(100, c.pct))}%` }))]
+    : [dot(c.status), name];
+  return el("button", { class: `tile${meter ? " tile-meter" : ""} tile-${c.status}`, type: "button", "aria-label": label, onclick: () => showCheck(c) },
+    ...body,
     el("span", { class: "tile-value" }, value));
 }
 
-function groupCard(title, checks, note, key) {
+function groupCard(title, checks, note) {
   if (!checks.length) return null;
   const worst = checks.some((c) => c.status === "fail") ? "fail"
     : checks.some((c) => c.status === "warn") ? "warn" : "ok";
   return el("section", { class: `card card-${worst}` },
     el("h2", {}, title, note ? el("span", { class: "meta" }, note) : null),
-    // Devices can run to a dozen, so their tiles are smaller - six across.
-    el("div", { class: key === "devices" ? "tiles tiles-small" : "tiles" }, checks.map(tile)));
+    // A group that runs past one row of five (devices, a long list of Drive
+    // folders) gets smaller tiles - six across - so the screen still fits.
+    el("div", { class: checks.length > 5 ? "tiles tiles-small" : "tiles" }, checks.map(tile)));
+}
+
+// The groups of one report, in the order the backend sends, then any group
+// it didn't name (a newer farm talking to an older watcher), titled by key -
+// shown rather than silently dropped.
+function groups(data) {
+  const named = data.groups || [];
+  const known = new Set(named.map(([key]) => key));
+  const extra = [...new Set(data.checks.map((c) => c.group))].filter((g) => !known.has(g));
+  return [...named, ...extra.map((g) => [g, g])];
 }
 
 function renderBanner(data) {
@@ -118,27 +94,35 @@ function renderBanner(data) {
   else if (data.overall === "warn") title = `All up · ${warns.length} to check`;
   else title = data.role === "remote" ? "Farm is reachable" : "All good";
   $("banner-title").textContent = title;
-  $("checked-at").textContent = Monitor.time(data.checked_at);
+  $("checked-at").textContent = data.checked_at ? `Updated ${Monitor.time(data.checked_at)}` : "";
   // One line per problem, cut to fit; the whole sentence is a tap away.
   $("banner-problems").replaceChildren(...problems.map((c) =>
     el("button", { class: "problem", type: "button", onclick: () => showCheck(c) },
-      el("b", {}, short(c)), " ", c.summary)));
+      el("b", {}, short(c)), el("span", { class: "problem-text" }, c.summary))));
 }
+
+let drawn = null;
 
 function render() {
   if (!last) return;
+  // The page polls every 30 s and the server checks every 60 s, so half the
+  // polls bring back the same report. Redrawing it would rebuild every tile
+  // for nothing.
+  const stamp = `${last.checked_at}|${last.farm ? last.farm.checked_at : ""}`;
+  if (stamp === drawn) return;
+  drawn = stamp;
   renderBanner(last);
   const cards = [];
-  for (const [key, title] of GROUPS[last.role]) {
-    cards.push(groupCard(title, last.checks.filter((c) => c.group === key), null, key));
+  for (const [key, title] of groups(last)) {
+    cards.push(groupCard(title, last.checks.filter((c) => c.group === key), null));
   }
   // The remote watcher also carries the farm's own last report, so the one
   // screen shows both what the farm said about itself and what the outside
   // can see now - and when the farm stops answering, the last thing it said.
   if (last.role === "remote" && last.farm && last.farm.checks) {
     const as = Monitor.time(last.farm.checked_at);
-    for (const [key, title] of GROUPS.farm) {
-      cards.push(groupCard(`Farm said: ${title}`, last.farm.checks.filter((c) => c.group === key), as, key));
+    for (const [key, title] of groups(last.farm)) {
+      cards.push(groupCard(`Farm said: ${title}`, last.farm.checks.filter((c) => c.group === key), as));
     }
   }
   $("groups").replaceChildren(...cards.filter(Boolean));
@@ -215,11 +199,46 @@ async function loadSession() {
   try {
     session = await Monitor.api("/api/session");
   } catch (e) { /* keep the defaults; load() reports the outage */ }
-  $("role").textContent = session.role === "remote" ? "Off-site" : "Farm PC";
+  $("role").textContent = session.role === "remote" ? "Off-site watcher" : "Farm PC";
   $("alerts-btn").hidden = session.role !== "farm";
+  $("account-label").textContent = session.admin ? "Sign out" : "Sign in as admin";
   const sub = await currentSub().catch(() => null);
   $("alerts-dot").hidden = !sub;
+  $("alerts-state").textContent = sub ? "· On" : "· Off";
 }
+
+// --- the menu ------------------------------------------------------------------
+// Everything that isn't the farm itself lives behind "...", as an iOS
+// pull-down menu: the screen stays the answer, and the settings are one tap
+// away without a second page to get lost in.
+
+function setMenu(open) {
+  $("menu").hidden = !open;
+  $("menu-btn").setAttribute("aria-expanded", String(open));
+  if (open) $("menu").querySelector(".menu-item:not([hidden])").focus();
+}
+
+$("menu-btn").addEventListener("click", (e) => {
+  e.stopPropagation();
+  setMenu($("menu").hidden);
+});
+// Choosing an item, tapping anywhere else or Escape closes it.
+$("menu").addEventListener("click", () => setMenu(false));
+document.addEventListener("click", (e) => {
+  if (!$("menu").hidden && !$("menu").contains(e.target)) setMenu(false);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !$("menu").hidden) { setMenu(false); $("menu-btn").focus(); }
+});
+
+$("account-btn").addEventListener("click", async () => {
+  if (session.admin) {
+    await Monitor.api("/api/admin/logout", { method: "POST" }).catch(() => {});
+    await loadSession();
+  } else {
+    await needAdmin();
+  }
+});
 
 // --- PIN -----------------------------------------------------------------------
 
@@ -254,7 +273,9 @@ function askPin() {
 async function needAdmin() {
   if (session.admin) return true;
   if (!session.pin_set) {
-    alert("No admin PIN has been set on the farm PC yet. Run backend\\set_pin.py there first.");
+    openSheet(
+      el("h2", { class: "sheet-title" }, "No admin PIN yet"),
+      el("p", {}, "No admin PIN has been set on the farm PC yet. Run backend\\set_pin.py there first."));
     return false;
   }
   return askPin();

@@ -179,7 +179,8 @@ def run_once(sys: System) -> dict:
                 _load_state()
             decision = evaluate(results, now)
             snapshot = {"role": config.ROLE, "checked_at": _stamp(now),
-                        "overall": checks.worst(results), "checks": results,
+                        "overall": checks.worst(results), "groups": checks.GROUPS[config.ROLE],
+                        "checks": results,
                         "events": list(reversed(_events[-50:]))}
             if config.ROLE == "remote":
                 snapshot["farm"] = _last_farm

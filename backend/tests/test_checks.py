@@ -2,11 +2,7 @@
 import datetime as dt
 
 import checks
-from tests.conftest import DNS, GOOD_SERVE, NOW, serve_for, ts_status
-
-
-def by_id(results):
-    return {c["id"]: c for c in results}
+from tests.conftest import DNS, GOOD_SERVE, NOW, by_id, serve_for, ts_status
 
 
 def test_a_healthy_farm_is_all_ok(fake):
@@ -195,7 +191,7 @@ def test_every_tile_has_something_to_show(fake):
     fake.ts = ts_status(key_expiry=(NOW + dt.timedelta(days=62)).isoformat() + "Z")
     results = by_id(checks.farm_checks(fake))
     assert results["app.boord"]["value"] == "15ms"
-    assert results["ts.key"]["value"] == "62d"
+    assert results["ts.key"]["value"] == "62d" and results["ts.key"]["short"] == "Key"
     assert results["ts.serve"]["value"] == "6/6"
     assert results["ts.cert"]["value"] == "60d"
     assert results["pc.disk"]["value"] == "120 GB free" and results["pc.disk"]["pct"] == 76

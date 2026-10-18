@@ -6,7 +6,7 @@ import checks
 import config
 import monitor
 import push
-from tests.conftest import NOW
+from tests.conftest import NOW, by_id
 
 FOLDER = r"C:\Users\Andre\My Drive\Boord backups"
 
@@ -14,10 +14,6 @@ FOLDER = r"C:\Users\Andre\My Drive\Boord backups"
 def configure(*lines):
     with open(config.DRIVE_BACKUPS_FILE, "w", encoding="utf-8") as fh:
         fh.write("\n".join(lines) + "\n")
-
-
-def by_id(results):
-    return {c["id"]: c for c in results}
 
 
 def fresh(fake, hours=5, folder=FOLDER):
@@ -64,7 +60,8 @@ def test_drive_not_running_fails_but_not_straight_after_a_boot(fake):
     assert c["status"] == "fail"
     assert "logged in" in c["summary"]
     fake.uptime = 10 * 60
-    assert by_id(checks.farm_checks(fake))["drive.app"]["status"] == "warn"
+    c = by_id(checks.farm_checks(fake))["drive.app"]
+    assert c["status"] == "fail" and c["alert"] is False
 
 
 def test_the_g_drive_is_explained_not_reported_missing(fake):
