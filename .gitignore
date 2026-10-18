@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+node_modules/
+
+# Written by install.ps1 with this machine's own absolute paths - not
+# portable, so not committed.
+start_monitor_server.bat
+
+# The admin PIN, the push signing key, the phones' alert subscriptions and
+# the remote token are all credentials. data-remote/ is the off-site
+# watcher's copy of the same.
+data/
+data-remote/
+
+.DS_Store

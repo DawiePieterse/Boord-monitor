@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 3.9 is the farm PC's minimum; 3.12 is what a fresh install gets.
+        python-version: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -r backend/requirements-dev.txt
+      - run: python -m pytest -q
+        working-directory: backend
+
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: pip install -r backend/requirements.txt
+      - run: npm install --no-save playwright@1.56.1 && npx playwright install --with-deps chromium
+      - name: Start the server
+        run: |
+          MONITOR_DATA_DIR=/tmp/mon-smoke python -m uvicorn main:app --port 8050 &
+          for i in $(seq 1 30); do curl -sf localhost:8050/api/version >/dev/null && break; sleep 1; done
+        working-directory: backend
+      - run: node scripts/smoke_test.js

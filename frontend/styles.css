@@ -1,0 +1,130 @@
+/* The banner keeps its light-mode colours in dark mode on purpose: white
+   text on dark mode's paler red is hard to read in sunlight.
+
+   Plain CSS, no build step. Boord's Tailwind runtime would be 400 KB to style
+   one screen. Colours follow the sibling apps' navy. */
+:root {
+  --bg: #f3f5f9;
+  --card: #ffffff;
+  --ink: #142033;
+  --muted: #5b6678;
+  --line: #e2e6ee;
+  --brand: #0A2F6B;
+  --ok: #1f8a4c;
+  --ok-bg: #e5f5ec;
+  --warn: #b26a00;
+  --warn-bg: #fff3dc;
+  --fail: #c62828;
+  --fail-bg: #fde8e8;
+  --off: #9aa3b2;
+  --log-bg: #f0f2f6;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1420;
+    --card: #162032;
+    --ink: #e6ebf3;
+    --muted: #97a2b5;
+    --line: #26324a;
+    --ok: #4cc27f;
+    --ok-bg: #12321f;
+    --warn: #f0a83a;
+    --warn-bg: #3a2a0d;
+    --fail: #ff6b6b;
+    --fail-bg: #3d1616;
+    --off: #5d6779;
+    --log-bg: #0f1726;
+  }
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+.top {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  background: var(--brand); color: #fff;
+}
+.brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.brand-name { font-weight: 700; font-size: 18px; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, .18); white-space: nowrap; }
+.link-btn { background: none; border: 0; color: #fff; font: inherit; text-decoration: underline; padding: 6px 0; }
+
+main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
+
+.banner { border-radius: 14px; padding: 16px; margin-bottom: 12px; color: #fff; }
+.banner-ok { background: #1f8a4c; }
+.banner-warn { background: #b26a00; }
+.banner-fail { background: #c62828; }
+.banner-unknown { background: var(--off); }
+.banner-title { font-size: 26px; font-weight: 800; line-height: 1.15; }
+.banner-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; opacity: .95; }
+.banner-problems { margin: 10px 0 0; padding-left: 18px; }
+.banner-problems li { margin: 4px 0; }
+.banner .pill { background: rgba(255, 255, 255, .22); color: #fff; border-color: transparent; }
+
+.notice { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-weight: 600; }
+
+.card { background: var(--card); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; border: 1px solid var(--line); }
+.card h2 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 2px 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.card h2 .meta { margin-left: auto; text-transform: none; letter-spacing: 0; }
+
+.checks, .events { list-style: none; margin: 0; padding: 0; }
+.check { border-top: 1px solid var(--line); padding: 10px 0; }
+.check:first-child { border-top: 0; padding-top: 2px; }
+.check-head { display: flex; gap: 10px; align-items: flex-start; }
+.check-head[role="button"] { cursor: pointer; }
+.check-body { flex: 1; min-width: 0; }
+.check-label { font-weight: 650; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.check-summary { color: var(--muted); overflow-wrap: anywhere; }
+.check-fail .check-summary { color: var(--fail); }
+.check-warn .check-summary { color: var(--warn); }
+.check-off { opacity: .6; }
+.check-actions { display: flex; gap: 8px; margin: 8px 0 0 22px; }
+.chev { color: var(--muted); padding: 0 2px; }
+.meta { font-weight: 400; font-size: 13px; color: var(--muted); }
+
+.dot { flex: none; width: 12px; height: 12px; border-radius: 50%; margin-top: 5px; background: var(--off); }
+.card h2 .dot { margin-top: 0; }
+.dot-ok { background: var(--ok); }
+.dot-warn { background: var(--warn); }
+.dot-fail { background: var(--fail); }
+
+.log {
+  background: var(--log-bg); border-radius: 8px; padding: 8px 10px; margin: 8px 0 0;
+  font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+  max-height: 320px; overflow: auto;
+}
+
+.events li { padding: 6px 0; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
+.events li:first-child { border-top: 0; }
+.events .dot { margin-top: 0; width: 9px; height: 9px; align-self: center; }
+
+.pill, .btn {
+  font: inherit; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  padding: 6px 14px; text-decoration: none; display: inline-block; cursor: pointer;
+}
+.pill { font-size: 14px; padding: 4px 12px; }
+.btn { padding: 10px 18px; font-weight: 600; background: var(--brand); color: #fff; border-color: var(--brand); }
+.btn-quiet { background: var(--card); color: var(--ink); border-color: var(--line); }
+.btn-danger { background: var(--fail); border-color: var(--fail); }
+button:disabled { opacity: .55; cursor: default; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+
+.muted { color: var(--muted); }
+.error { color: var(--fail); font-weight: 600; }
+.foot { text-align: center; font-size: 13px; padding: 8px 0; }
+
+dialog { border: 0; border-radius: 16px; padding: 18px; width: min(440px, calc(100vw - 32px)); background: var(--card); color: var(--ink); }
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+dialog h2 { margin: 0 0 6px; font-size: 19px; }
+dialog input { width: 100%; font: inherit; font-size: 22px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); letter-spacing: .2em; }

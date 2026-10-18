@@ -1,0 +1,97 @@
+"""Paths and environment for Boord Monitor.
+
+The same code runs in two places, chosen by MONITOR_ROLE:
+
+  farm    (the default) - on the farm PC, beside the five apps it watches.
+          It can see everything local: the ports, the scheduled tasks, the
+          watchdog log, the disk, and what `tailscale serve` is publishing.
+          It is also the only one that can restart anything. What it cannot
+          do is tell anybody that the PC itself is off.
+
+  remote  - on some other always-on machine on the tailnet (the owner's Mac,
+          typically). It looks at the farm the way the phones do, over
+          Tailscale, and its one job is the alert the farm PC cannot send
+          about itself: "the farm PC is not answering at all".
+
+Every path can be overridden by an environment variable so the installer and
+the tests can point the service wherever they need.
+"""
+import os
+import shutil
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.abspath(os.path.join(_HERE, ".."))
+
+ROLE = os.environ.get("MONITOR_ROLE", "farm").strip().lower()
+if ROLE not in ("farm", "remote"):
+    raise RuntimeError(f"MONITOR_ROLE must be 'farm' or 'remote', not {ROLE!r}")
+
+# Holds the push keys, the phones' alert subscriptions, the admin PIN and the
+# check history. None of it is farm data, but the subscriptions and the VAPID
+# private key are credentials, so the folder is gitignored.
+DATA_DIR = os.environ.get("MONITOR_DATA_DIR", os.path.join(REPO_ROOT, "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
+
+# Clear of Boord 8000, Owner 8010, Notes 8020, Kudde 8030, Labour 8040.
+# Bound to 127.0.0.1 by the installer and published by `tailscale serve
+# --https=8050`, the same as every sibling.
+PORT = int(os.environ.get("MONITOR_PORT", "8050"))
+
+FRONTEND_DIR = os.path.join(REPO_ROOT, "frontend")
+
+# Boord's checkout. The monitor reads data\watchdog.log from it and, for the
+# restart button, runs its watchdog.ps1 - one restart implementation on the
+# PC, not two that could disagree about whether an update is in progress.
+BOORD_DIR = os.path.abspath(os.environ.get(
+    "MONITOR_BOORD_DIR", os.path.join(REPO_ROOT, "..", "Boord")))
+
+
+def _find_tailscale() -> str:
+    """The CLI. On the farm PC this runs as SYSTEM, whose PATH does not
+    always include Tailscale's folder, so the default install location is
+    tried as well rather than reporting a working tailnet as "not found"."""
+    override = os.environ.get("MONITOR_TAILSCALE")
+    if override:
+        return override
+    found = shutil.which("tailscale")
+    if found:
+        return found
+    for candidate in (r"C:\Program Files\Tailscale\tailscale.exe",
+                      "/Applications/Tailscale.app/Contents/MacOS/Tailscale",
+                      "/usr/local/bin/tailscale", "/opt/homebrew/bin/tailscale"):
+        if os.path.exists(candidate):
+            return candidate
+    return "tailscale"
+
+
+TAILSCALE_EXE = _find_tailscale()
+
+# How often the whole set of checks runs. A minute is quick enough that a
+# morning outage is noticed before the pack house queue forms, and slow
+# enough that the PowerShell calls it makes cost the PC nothing noticeable.
+CHECK_INTERVAL_S = int(os.environ.get("MONITOR_CHECK_INTERVAL", "60"))
+
+# A check has to fail this many runs in a row before a phone is woken. The
+# watchdog takes up to five minutes plus 45 s of probes to restart a dead
+# app; alerting on the very first miss would buzz someone for every outage
+# the watchdog was about to fix on its own. Three runs is about three
+# minutes - still well before anyone at the door gives up and reaches for
+# paper.
+FAIL_AFTER = int(os.environ.get("MONITOR_FAIL_AFTER", "3"))
+
+# While something stays broken, remind every few hours rather than once and
+# never again - a single 03:00 notification is easily swiped away unread.
+REMIND_EVERY_S = int(os.environ.get("MONITOR_REMIND_HOURS", "6")) * 3600
+
+# --- remote role ----------------------------------------------------------
+# The farm monitor's tailnet address, e.g. https://farm-pc.tail1234.ts.net:8050
+FARM_URL = os.environ.get("MONITOR_FARM_URL", "").rstrip("/")
+
+# The shared secret that lets the remote watcher fetch the farm's push keys
+# and the phones' subscriptions. The farm writes it to data/remote_token.txt
+# on first start; it is copied once, by hand, to the remote machine.
+REMOTE_TOKEN_FILE = os.path.join(DATA_DIR, "remote_token.txt")
+
+# VAPID's "sub" claim: who to contact about this sender. Apple rejects a push
+# whose claim is not a mailto: or https: URL, so it has to look like one.
+VAPID_SUB = os.environ.get("MONITOR_VAPID_SUB", "mailto:boord-monitor@example.com")

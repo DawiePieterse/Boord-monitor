@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0A2F6B">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Monitor">
+  <title>Boord Monitor</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icons/icon-180.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="brand-name">Boord Monitor</span>
+      <span id="role" class="chip"></span>
+    </div>
+    <button id="account" class="link-btn" type="button">Sign in</button>
+  </header>
+
+  <main>
+    <section id="banner" class="banner banner-unknown" aria-live="polite">
+      <div class="banner-title" id="banner-title">Checking…</div>
+      <div class="banner-sub">
+        <span id="checked-at"></span>
+        <button id="check-now" class="pill" type="button">Check now</button>
+      </div>
+      <ul id="banner-problems" class="banner-problems"></ul>
+    </section>
+
+    <div id="offline" class="notice" hidden>
+      Can't reach this monitor. What you see is from <span id="offline-since"></span>.
+    </div>
+
+    <div id="groups"></div>
+
+    <section class="card" id="events-card" hidden>
+      <h2>Recent changes</h2>
+      <ul id="events" class="events"></ul>
+    </section>
+
+    <section class="card" id="alerts-card">
+      <h2>Alerts on this phone</h2>
+      <p id="alerts-state" class="muted">…</p>
+      <div class="row-actions">
+        <button id="alerts-on" class="btn" type="button" hidden>Turn on alerts</button>
+        <button id="alerts-test" class="btn btn-quiet" type="button" hidden>Send a test</button>
+        <button id="alerts-off" class="btn btn-quiet" type="button" hidden>Turn off</button>
+      </div>
+    </section>
+
+    <footer class="foot muted">
+      <span id="version"></span>
+    </footer>
+  </main>
+
+  <dialog id="pin-dialog">
+    <form method="dialog" id="pin-form">
+      <h2>Admin PIN</h2>
+      <p class="muted">Needed to restart an app or turn on alerts.</p>
+      <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required minlength="4">
+      <p id="pin-error" class="error" hidden></p>
+      <div class="row-actions">
+        <button class="btn" type="submit" value="ok">Sign in</button>
+        <button class="btn btn-quiet" type="button" id="pin-cancel">Cancel</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="restart-dialog">
+    <h2 id="restart-title">Restart</h2>
+    <p id="restart-warning" class="muted"></p>
+    <pre id="restart-output" class="log" hidden></pre>
+    <div class="row-actions">
+      <button class="btn btn-danger" type="button" id="restart-go">Restart</button>
+      <button class="btn btn-quiet" type="button" id="restart-close">Cancel</button>
+    </div>
+  </dialog>
+
+  <script src="api.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
