@@ -17,6 +17,7 @@ real but not urgent, and a phone that buzzes for them is a phone whose
 owner learns to ignore it before the night Boord actually goes down.
 """
 import datetime as dt
+import ntpath
 import os
 import re
 from typing import Dict, List, Optional
@@ -51,6 +52,16 @@ def _ago(seconds: float) -> str:
     if seconds < 48 * 3600:
         return f"{seconds // 3600} h"
     return f"{seconds // 86400} days"
+
+
+def _short(seconds: float) -> str:
+    """An age or a duration in at most four characters, for the dashboard's
+    tiles: 40s, 17m, 5h, 3d."""
+    seconds = max(0, int(seconds))
+    for unit, size in (("d", 86400), ("h", 3600), ("m", 60)):
+        if seconds >= size * (2 if unit == "d" else 1):
+            return f"{seconds // size}{unit}"
+    return f"{seconds}s"
 
 
 def _gb(n: float) -> str:
@@ -141,7 +152,8 @@ def _task_check(sys: System, tasks: Optional[Dict[str, dict]], name: str, id: st
     elif result not in (0, None, 267009):  # 267009 = still running right now
         status = "warn"
         summary += f", and its last run ended with code {result}"
-    return check(id, "guards", label, status, summary + ("." if not summary.endswith(".") else ""))
+    return check(id, "guards", label, status, summary + ("." if not summary.endswith(".") else ""),
+                 value=_short(age))
 
 
 # --- the apps ----------------------------------------------------------------
@@ -159,16 +171,20 @@ def app_check(sys: System, app: apps.App, installed: bool, dnsname: Optional[str
 
     if not local.answered and not installed:
         return check("app." + app.key, "apps", app.name, "off",
-                     "Not installed on this PC.", **data)
+                     "Not installed on this PC.", value="off", **data)
     if not local.answered:
         return check("app." + app.key, "apps", app.name, "fail",
-                     f"Not answering on port {app.port} ({local.error}).", **data)
+                     f"Not answering on port {app.port} ({local.error}).", value="down", **data)
 
     detail = []
     status = "ok"
     summary = f"Up - answered in {local.ms} ms"
+    # The tile's one word: the answer time when all is well, otherwise the
+    # shortest name for what is wrong.
+    value = f"{local.ms}ms"
     if local.status and local.status >= 500:
         status, summary = "warn", f"Running, but answering HTTP {local.status} - a bug a restart may not fix"
+        value = str(local.status)
     elif local.ms is not None and local.ms > 5000:
         status, summary = "warn", f"Up, but slow - took {local.ms / 1000:.1f} s to answer"
 
@@ -179,7 +195,7 @@ def app_check(sys: System, app: apps.App, installed: bool, dnsname: Optional[str
         if info.get("migrations_applied") is False:
             # Boord only. The schema is behind the code: update_server.bat
             # did not finish its migration step, and some screens will 500.
-            status = "fail"
+            status, value = "fail", "db"
             summary = "Running, but its database migrations were not applied - re-run update_server.bat"
         update = info.get("update")
         if isinstance(update, dict) and update.get("available") and update.get("latest"):
@@ -192,11 +208,11 @@ def app_check(sys: System, app: apps.App, installed: bool, dnsname: Optional[str
         remote = sys.http(_url(dnsname, app.ts_port, app.health), timeout=10)
         data["tailnet"] = remote.answered
         if not remote.answered:
-            status = "fail"
+            status, value = "fail", "no TS"
             summary = (f"Running on this PC, but not reachable over Tailscale at "
                        f":{app.ts_port} ({remote.error}) - phones cannot open it")
 
-    return check("app." + app.key, "apps", app.name, status, summary + ".", detail, **data)
+    return check("app." + app.key, "apps", app.name, status, summary + ".", detail, value=value, **data)
 
 
 # --- Tailscale ---------------------------------------------------------------
@@ -257,23 +273,24 @@ def tailscale_checks(sys: System, status: Optional[dict], err: str, group: str =
     expiry = _parse_iso(me.get("KeyExpiry"))
     if expiry is None or expiry.year < 2000:
         out.append(check("ts.key", group, "Tailscale key", "ok",
-                         "Key expiry is turned off for this machine - it will not be signed out."))
+                         "Key expiry is turned off for this machine - it will not be signed out.", value="never"))
     else:
         days = (expiry - sys.now()).total_seconds() / 86400
         when = expiry.strftime("%Y-%m-%d")
+        key_value = f"{max(0, int(days))}d"
         fix = ("In the Tailscale admin console, open this machine's menu and choose "
                "'Disable key expiry'.")
         if days < 0:
-            out.append(check("ts.key", group, "Tailscale key", "fail", f"Expired on {when}. {fix}"))
+            out.append(check("ts.key", group, "Tailscale key", "fail", f"Expired on {when}. {fix}", value="0d"))
         elif days < 3:
             out.append(check("ts.key", group, "Tailscale key", "fail",
-                             f"Expires {when}, in {days * 24:.0f} hours. {fix}"))
+                             f"Expires {when}, in {days * 24:.0f} hours. {fix}", value=f"{days * 24:.0f}h"))
         elif days < 21:
             out.append(check("ts.key", group, "Tailscale key", "warn",
-                             f"Expires {when}, in {int(days)} days. {fix}"))
+                             f"Expires {when}, in {int(days)} days. {fix}", value=key_value))
         else:
             out.append(check("ts.key", group, "Tailscale key", "ok",
-                             f"Expires {when}, in {int(days)} days."))
+                             f"Expires {when}, in {int(days)} days.", value=key_value))
     return out
 
 
@@ -347,6 +364,8 @@ def serve_check(sys: System, installed: List[apps.App]) -> dict:
         if ts_port not in expected:
             notes.append(f":{ts_port} -> {target} is published but is not one of the farm apps.")
     table = [f":{p} -> {t}" for p, (_port, t) in sorted(mappings.items())]
+    wanted = installed + [apps.SELF]
+    right = sum(1 for a in wanted if (mappings.get(a.ts_port) or (None,))[0] == a.port)
     if status == "fail":
         summary = problems[0]
     elif notes:
@@ -354,7 +373,8 @@ def serve_check(sys: System, installed: List[apps.App]) -> dict:
     else:
         summary = f"All {len(installed) + 1} apps are published where the phones expect them."
     return check("ts.serve", "tailscale", "Published ports", status, summary,
-                 problems + notes + ["Live mapping:"] + (table or ["(nothing published)"]))
+                 problems + notes + ["Live mapping:"] + (table or ["(nothing published)"]),
+                 value="FUNNEL" if funnel else f"{right}/{len(wanted)}")
 
 
 def cert_check(sys: System, dnsname: str, port: int) -> dict:
@@ -370,12 +390,13 @@ def cert_check(sys: System, dnsname: str, port: int) -> dict:
     # refuses every app with a certificate error.
     if days < 0:
         return check("ts.cert", "tailscale", "HTTPS certificate", "fail",
-                     f"Expired on {when} - phones will refuse every app.")
+                     f"Expired on {when} - phones will refuse every app.", value="0d")
     if days < 7:
         return check("ts.cert", "tailscale", "HTTPS certificate", "warn",
-                     f"Expires {when}, in {int(days)} days, and Tailscale has not renewed it.")
+                     f"Expires {when}, in {int(days)} days, and Tailscale has not renewed it.",
+                     value=f"{int(days)}d")
     return check("ts.cert", "tailscale", "HTTPS certificate", "ok",
-                 f"Valid until {when} ({int(days)} days).")
+                 f"Valid until {when} ({int(days)} days).", value=f"{int(days)}d")
 
 
 # --- the PC ------------------------------------------------------------------
@@ -387,16 +408,18 @@ def pc_checks(sys: System) -> List[dict]:
         total, free = sys.disk(path)
         pct = free * 100 / total if total else 0
         drive = os.path.splitdrive(os.path.abspath(path))[0] or "/"
+        # `pct` is what the dashboard draws as a bar: how full, not how free.
+        meter = {"pct": round(100 - pct), "value": f"{free / 1024 ** 3:.0f} GB free"}
         summary = f"{_gb(free)} free of {_gb(total)} on {drive} ({pct:.0f}%)."
         # SQLite needs room to write its journal and the nightly backups need
         # room to land. A full disk does not crash the apps politely: writes
         # start failing mid-request and the scans at the door stop syncing.
         if free < 2 * 1024 ** 3:
-            out.append(check("pc.disk", "pc", "Disk", "fail", "Almost full: " + summary))
+            out.append(check("pc.disk", "pc", "Disk", "fail", "Almost full: " + summary, **meter))
         elif free < 5 * 1024 ** 3 or pct < 10:
-            out.append(check("pc.disk", "pc", "Disk", "warn", "Getting full: " + summary))
+            out.append(check("pc.disk", "pc", "Disk", "warn", "Getting full: " + summary, **meter))
         else:
-            out.append(check("pc.disk", "pc", "Disk", "ok", summary))
+            out.append(check("pc.disk", "pc", "Disk", "ok", summary, **meter))
     except OSError as e:
         out.append(check("pc.disk", "pc", "Disk", "unknown", str(e)))
 
@@ -406,7 +429,8 @@ def pc_checks(sys: System) -> List[dict]:
         used = 100 - avail * 100 / total if total else 0
         status = "warn" if used > 92 else "ok"
         out.append(check("pc.memory", "pc", "Memory", status,
-                         f"{used:.0f}% in use ({_gb(avail)} free of {_gb(total)})."))
+                         f"{used:.0f}% in use ({_gb(avail)} free of {_gb(total)}).",
+                         pct=round(used), value=f"{used:.0f}% used"))
 
     up = sys.uptime_s()
     if up is not None:
@@ -418,7 +442,8 @@ def pc_checks(sys: System) -> List[dict]:
         boot = sys.now() - dt.timedelta(seconds=up)
         out.append(check("pc.uptime", "pc", "Running since", status,
                          f"Up {_ago(up)} (booted {boot.strftime('%Y-%m-%d %H:%M')} UTC)."
-                         + (" It restarted recently." if status == "warn" else ""), alert=False))
+                         + (" It restarted recently." if status == "warn" else ""), alert=False,
+                         value=_short(up)))
     return out
 
 
@@ -458,16 +483,229 @@ def watchdog_log_check(sys: System) -> dict:
     if trouble:
         return check("guards.log", "guards", "Watchdog log", "warn",
                      f"The watchdog could not fix something in the last 24 h: {trouble[-1][21:]}",
-                     tail, alert=False)
+                     tail, alert=False, value=f"{len(restarts)}x")
     if restarts:
         counts = {}
         for name in restarts:
             counts[name] = counts.get(name, 0) + 1
         said = ", ".join(f"{n} x{c}" if c > 1 else n for n, c in counts.items())
         return check("guards.log", "guards", "Watchdog log", "ok",
-                     f"Restarted in the last 24 h: {said}.", tail, alert=False)
+                     f"Restarted in the last 24 h: {said}.", tail, alert=False, value=f"{len(restarts)}x")
     return check("guards.log", "guards", "Watchdog log", "ok",
-                 "No restarts in the last 24 h.", tail, alert=False)
+                 "No restarts in the last 24 h.", tail, alert=False, value="0x")
+
+
+# --- Google Drive backups ----------------------------------------------------
+
+DRIVE_EXE = "GoogleDriveFS.exe"
+
+
+def read_drive_folders() -> List[tuple]:
+    """[(folder, max days)] from data/drive_backups.txt; [] when it isn't
+    there. A malformed day count falls back to the default rather than
+    dropping the line - a folder silently left unwatched is the one failure
+    this file must not have."""
+    try:
+        with open(config.DRIVE_BACKUPS_FILE, encoding="utf-8-sig") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        folder, _, days = line.partition("|")
+        try:
+            limit = float(days.strip()) if days.strip() else config.DRIVE_DEFAULT_DAYS
+        except ValueError:
+            limit = config.DRIVE_DEFAULT_DAYS
+        out.append((folder.strip().strip('"'), limit))
+    return out
+
+
+def drive_checks(sys: System) -> List[dict]:
+    """Two questions: is Google Drive for Desktop running to upload anything
+    at all, and has a fresh backup reached each folder it uploads?
+
+    Drive for Desktop is not a service. It runs only while someone is logged
+    in to Windows, so a PC that rebooted for an update at 03:00 and sat at the
+    login screen keeps writing backups that nothing uploads - every folder
+    check stays green while nothing leaves the farm. That is why the process
+    is checked on its own, and why it alerts.
+    """
+    folders = read_drive_folders()
+    if not folders:
+        return []
+    out = []
+    running = sys.process_running(DRIVE_EXE)
+    if running is None:
+        out.append(check("drive.app", "backups", "Google Drive", "unknown",
+                         "Whether Google Drive is running can only be checked on the farm PC."))
+    elif running:
+        out.append(check("drive.app", "backups", "Google Drive", "ok", "Running, so it can upload."))
+    else:
+        up = sys.uptime_s()
+        why = ("Not running, so nothing is being uploaded. It only runs while someone is logged in "
+               "to Windows: log in on the farm PC, and start Google Drive if it doesn't start itself.")
+        # Grace after a boot: whoever restarted the PC is usually about to
+        # log in, and paging them for the minutes in between teaches them
+        # to ignore this.
+        status = "warn" if up is not None and up < 30 * 60 else "fail"
+        out.append(check("drive.app", "backups", "Google Drive", status, why))
+
+    for i, (folder, limit) in enumerate(folders):
+        # ntpath, not os.path: these are Windows paths, and the tests (and
+        # anyone trying this on a Mac) run where os.path can't split them.
+        name = ntpath.basename(folder.rstrip("\\/")) or folder
+        cid = f"drive.folder.{i}"
+        try:
+            newest = sys.newest_file(folder)
+        except OSError:
+            hint = ""
+            drive = ntpath.splitdrive(folder)[0].upper()
+            if drive and drive != "C:":
+                hint = (f" If {drive} is Google Drive's own drive, the monitor can't see it: Drive "
+                        "mounts it only for the logged-in user, and the monitor runs as SYSTEM. "
+                        "Name the folder on C: that Drive uploads from instead.")
+            out.append(check(cid, "backups", name, "warn",
+                             f"Can't open {folder}.{hint}", alert=False))
+            continue
+        if newest is None:
+            out.append(check(cid, "backups", name, "warn", f"{folder} has no files in it yet."))
+            continue
+        path, when = newest
+        age = (sys.now() - when).total_seconds()
+        file_name = ntpath.basename(path)
+        if age > limit * 86400:
+            out.append(check(cid, "backups", name, "fail",
+                             f"The newest backup is {_ago(age)} old ({file_name}). A new one is "
+                             f"expected at least every {limit:g} days.", [folder], value=_short(age)))
+        else:
+            out.append(check(cid, "backups", name, "ok",
+                             f"Newest backup {_ago(age)} ago: {file_name}.", [folder], value=_short(age)))
+    return out
+
+
+# --- devices on the tailnet --------------------------------------------------
+
+def read_device_list() -> Optional[List[tuple]]:
+    """[(tailscale name, label, boord id)] from data/devices.txt, or None when
+    there is no such file (then every device on the tailnet is shown)."""
+    try:
+        with open(config.DEVICES_FILE, encoding="utf-8-sig") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return None
+    out = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in line.split("|")] + ["", ""]
+        if parts[0]:
+            out.append((parts[0], parts[1] or parts[0], parts[2]))
+    return out
+
+
+def _peer_names(peer: dict) -> set:
+    """Every name a person might write for a peer: its host name and the
+    first label of its MagicDNS name, which differ when two machines share a
+    host name and Tailscale appends -1."""
+    names = {str(peer.get("HostName") or "").lower()}
+    dns = str(peer.get("DNSName") or "")
+    if dns:
+        names.add(dns.split(".")[0].lower())
+    names.discard("")
+    return names
+
+
+def device_checks(sys: System, status: Optional[dict]) -> List[dict]:
+    """One tile per phone, tablet and computer on the tailnet: is it online
+    now, or when was it last seen, and is its Tailscale key about to lapse.
+    For Boord's own devices, also when each last sent a crate.
+
+    None of this ever pages anyone. Tablets are switched off at night and lose
+    signal in the orchard, so "offline" is the normal state for half the day
+    - it shows grey, not amber, and the banner ignores it. The one thing
+    worth a warning is a key about to expire: that device drops off the
+    tailnet, and every app with it, on a date that can be seen coming."""
+    if not status or status.get("BackendState") != "Running":
+        return []
+    peers = [p for p in (status.get("Peer") or {}).values()
+             if isinstance(p, dict) and not p.get("ShareeNode")]
+    listed = read_device_list()
+    boord = sys.boord_devices(config.BOORD_DB)
+
+    if listed is None:
+        wanted = [(n, n, "") for n in sorted({p.get("HostName") or "?" for p in peers}, key=str.lower)]
+    else:
+        wanted = listed
+
+    out = []
+    for name, label, boord_id in wanted:
+        key = name.lower()
+        peer = next((p for p in peers if key in _peer_names(p)), None)
+        cid = "dev." + key
+        if peer is None:
+            out.append(check(cid, "devices", label, "warn",
+                             f"No device called '{name}' on the tailnet. Renamed, or removed from "
+                             "Tailscale? Check data\\devices.txt against the Tailscale admin console.",
+                             alert=False, value="?"))
+            continue
+
+        detail = []
+        os_name = peer.get("OS") or "?"
+        ips = ", ".join(peer.get("TailscaleIPs") or [])
+        detail.append(f"Tailscale: {peer.get('HostName')} ({os_name}) {ips}")
+        if peer.get("Online"):
+            status_, value, summary = "ok", "on", "Online now."
+        else:
+            seen = _parse_iso(peer.get("LastSeen"))
+            if seen and seen.year > 2000:
+                age = (sys.now() - seen).total_seconds()
+                status_, value = "off", _short(age)
+                summary = f"Offline - last seen {_ago(age)} ago."
+            else:
+                status_, value, summary = "off", "off", "Offline."
+
+        # A device's own key expiry, as for the farm PC's (tailscale_checks).
+        expiry = _parse_iso(peer.get("KeyExpiry"))
+        if expiry and expiry.year > 2000:
+            days = (expiry - sys.now()).total_seconds() / 86400
+            if days < 14:
+                status_ = "warn"
+                when = expiry.strftime("%Y-%m-%d")
+                summary = (f"Its Tailscale key {'expired on ' + when if days < 0 else 'expires ' + when}: "
+                           "it will drop off the tailnet. In the Tailscale admin console, choose "
+                           "'Disable key expiry' for this device. " + summary)
+
+        # Boord: by the id given in devices.txt, or by the Tailscale name when
+        # the tablet was simply named after its Boord slot (device-03).
+        bid = boord_id or (key if boord and key in boord else "")
+        info = (boord or {}).get(bid) if bid else None
+        if info:
+            detail.append(f"Boord: {bid}" + (f" - {info['station']}" if info["station"] else "")
+                          + f" ({info['role']})")
+            sync = _parse_iso(str(info["last_sync"]).replace(" ", "T")) if info["last_sync"] else None
+            opened = _parse_iso(str(info["last_seen"]).replace(" ", "T")) if info["last_seen"] else None
+            if sync:
+                age = (sys.now() - sync).total_seconds()
+                detail.append(f"Last crate received: {_ago(age)} ago ({sync.strftime('%Y-%m-%d %H:%M')} UTC)")
+                summary += f" Last crate received {_ago(age)} ago."
+            elif info["role"] == "field":
+                detail.append("Last crate received: never")
+            if opened:
+                detail.append(f"Boord last opened: {_ago((sys.now() - opened).total_seconds())} ago")
+        elif bid:
+            detail.append(f"Boord: no device '{bid}' in Boord's list")
+
+        c = check(cid, "devices", label, status_, summary, detail, alert=False, value=value)
+        if status_ == "off":
+            # The sheet's word for grey here is "Offline", not "Not installed".
+            c["word"] = "Offline"
+        out.append(c)
+    return out
 
 
 # --- the whole picture, per role --------------------------------------------
@@ -498,6 +736,8 @@ def farm_checks(sys: System) -> List[dict]:
     out.append(_task_check(sys, tasks, apps.HEARTBEAT_TASK, "guards.heartbeat", "Heartbeat", 10,
                            "No email reaches anyone when this PC is off - run Boord's setup_heartbeat.bat."))
     out.append(watchdog_log_check(sys))
+    out.extend(drive_checks(sys))
+    out.extend(device_checks(sys, status))
     return out
 
 
@@ -541,7 +781,8 @@ def remote_checks(sys: System, last_farm: Optional[dict]) -> tuple:
                          "ok" if p.answered else "fail",
                          (f"Reachable over Tailscale ({p.ms} ms)." if p.answered
                           else f"Not reachable over Tailscale ({p.error})."),
-                         alert=False, app=app.key, url=_url(host, app.ts_port, app.path)))
+                         alert=False, app=app.key, url=_url(host, app.ts_port, app.path),
+                         value=f"{p.ms}ms" if p.answered else "down"))
 
     if farm_status is not None:
         checked = _parse_iso(farm_status.get("checked_at"))

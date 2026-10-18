@@ -15,47 +15,49 @@
 <body>
   <header class="top">
     <div class="brand">
-      <span class="brand-name">Boord Monitor</span>
+      <span class="brand-name">Monitor</span>
       <span id="role" class="chip"></span>
     </div>
-    <button id="account" class="link-btn" type="button">Sign in</button>
+    <div class="top-actions">
+      <button id="history-btn" class="icon-btn" type="button" aria-label="Recent changes">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </button>
+      <button id="alerts-btn" class="icon-btn" type="button" aria-label="Alerts on this phone">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+        <span id="alerts-dot" class="badge" hidden></span>
+      </button>
+      <button id="check-now" class="icon-btn" type="button" aria-label="Check now">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>
+      </button>
+    </div>
   </header>
 
   <main>
     <section id="banner" class="banner banner-unknown" aria-live="polite">
-      <div class="banner-title" id="banner-title">Checking…</div>
-      <div class="banner-sub">
-        <span id="checked-at"></span>
-        <button id="check-now" class="pill" type="button">Check now</button>
+      <div class="banner-row">
+        <span class="banner-title" id="banner-title">Checking…</span>
+        <span class="banner-time" id="checked-at"></span>
       </div>
-      <ul id="banner-problems" class="banner-problems"></ul>
+      <div id="banner-problems" class="banner-problems"></div>
     </section>
 
     <div id="offline" class="notice" hidden>
-      Can't reach this monitor. What you see is from <span id="offline-since"></span>.
+      Can't reach the monitor - showing <span id="offline-since"></span>.
     </div>
 
-    <div id="groups"></div>
+    <div id="groups" class="groups"></div>
 
-    <section class="card" id="events-card" hidden>
-      <h2>Recent changes</h2>
-      <ul id="events" class="events"></ul>
-    </section>
-
-    <section class="card" id="alerts-card">
-      <h2>Alerts on this phone</h2>
-      <p id="alerts-state" class="muted">…</p>
-      <div class="row-actions">
-        <button id="alerts-on" class="btn" type="button" hidden>Turn on alerts</button>
-        <button id="alerts-test" class="btn btn-quiet" type="button" hidden>Send a test</button>
-        <button id="alerts-off" class="btn btn-quiet" type="button" hidden>Turn off</button>
-      </div>
-    </section>
-
-    <footer class="foot muted">
-      <span id="version"></span>
-    </footer>
+    <footer class="foot muted"><span id="version"></span> · tap any dot for detail</footer>
   </main>
+
+  <!-- One sheet for everything that used to be its own card: a check's full
+       story, the history, the alert settings. Built in app.js each time. -->
+  <dialog id="sheet">
+    <div id="sheet-body"></div>
+    <div class="row-actions">
+      <button class="btn btn-quiet" type="button" id="sheet-close">Close</button>
+    </div>
+  </dialog>
 
   <dialog id="pin-dialog">
     <form method="dialog" id="pin-form">

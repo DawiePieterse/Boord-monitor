@@ -1,8 +1,9 @@
-/* The banner keeps its light-mode colours in dark mode on purpose: white
-   text on dark mode's paler red is hard to read in sunlight.
+/* Plain CSS, no build step. Boord's Tailwind runtime would be 400 KB to style
+   one screen. Colours follow the sibling apps' navy.
 
-   Plain CSS, no build step. Boord's Tailwind runtime would be 400 KB to style
-   one screen. Colours follow the sibling apps' navy. */
+   Everything is sized so the whole farm fits one phone screen (390 x 844,
+   an iPhone 14) without scrolling: the colours are the answer, and the
+   words are one tap away in the sheet. */
 :root {
   --bg: #f3f5f9;
   --card: #ffffff;
@@ -11,7 +12,7 @@
   --line: #e2e6ee;
   --brand: #0A2F6B;
   --ok: #1f8a4c;
-  --ok-bg: #e5f5ec;
+  --ok-bg: #e9f6ef;
   --warn: #b26a00;
   --warn-bg: #fff3dc;
   --fail: #c62828;
@@ -28,11 +29,11 @@
     --muted: #97a2b5;
     --line: #26324a;
     --ok: #4cc27f;
-    --ok-bg: #12321f;
+    --ok-bg: #13281d;
     --warn: #f0a83a;
-    --warn-bg: #3a2a0d;
+    --warn-bg: #33270f;
     --fail: #ff6b6b;
-    --fail-bg: #3d1616;
+    --fail-bg: #3a1818;
     --off: #5d6779;
     --log-bg: #0f1726;
   }
@@ -45,86 +46,140 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   padding-bottom: env(safe-area-inset-bottom);
 }
 
+/* --- header ---------------------------------------------------------------- */
 .top {
   display: flex; align-items: center; justify-content: space-between;
-  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  padding: calc(6px + env(safe-area-inset-top)) 12px 6px 16px;
   background: var(--brand); color: #fff;
 }
 .brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .brand-name { font-weight: 700; font-size: 18px; }
-.chip { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: rgba(255, 255, 255, .18); white-space: nowrap; }
-.link-btn { background: none; border: 0; color: #fff; font: inherit; text-decoration: underline; padding: 6px 0; }
+.chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, .18); white-space: nowrap; }
+.top-actions { display: flex; gap: 2px; }
+.icon-btn {
+  position: relative; width: 40px; height: 40px; border: 0; border-radius: 10px;
+  background: none; color: #fff; display: grid; place-items: center; cursor: pointer;
+}
+.icon-btn:active { background: rgba(255, 255, 255, .15); }
+.icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn.spinning svg { animation: spin .9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.badge { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: #4cc27f; box-shadow: 0 0 0 2px var(--brand); }
 
-main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; }
+main { max-width: 720px; margin: 0 auto; padding: 10px 12px 12px; }
 
-.banner { border-radius: 14px; padding: 16px; margin-bottom: 12px; color: #fff; }
+/* --- banner ------------------------------------------------------------------ */
+/* The banner keeps its light-mode colours in dark mode on purpose: white
+   text on dark mode's paler red is hard to read in sunlight. */
+.banner { border-radius: 14px; padding: 10px 14px; margin-bottom: 10px; color: #fff; }
 .banner-ok { background: #1f8a4c; }
 .banner-warn { background: #b26a00; }
 .banner-fail { background: #c62828; }
 .banner-unknown { background: var(--off); }
-.banner-title { font-size: 26px; font-weight: 800; line-height: 1.15; }
-.banner-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; opacity: .95; }
-.banner-problems { margin: 10px 0 0; padding-left: 18px; }
-.banner-problems li { margin: 4px 0; }
-.banner .pill { background: rgba(255, 255, 255, .22); color: #fff; border-color: transparent; }
+.banner-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.banner-title { font-size: 22px; font-weight: 800; line-height: 1.15; }
+.banner-time { font-size: 13px; opacity: .9; white-space: nowrap; }
+.banner-problems:empty { display: none; }
+.banner-problems { margin-top: 6px; display: grid; gap: 2px; }
+.problem {
+  all: unset; display: block; cursor: pointer; font-size: 13px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.problem::before { content: "● "; opacity: .8; }
 
-.notice { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; font-weight: 600; }
+.notice { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 6px 10px; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
 
-.card { background: var(--card); border-radius: 14px; padding: 12px 14px; margin-bottom: 12px; border: 1px solid var(--line); }
-.card h2 { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 2px 0 8px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
-.card h2 .meta { margin-left: auto; text-transform: none; letter-spacing: 0; }
+/* --- groups of tiles ------------------------------------------------------------ */
+.groups { display: grid; gap: 7px; }
+/* On a wide screen two groups sit side by side; on a phone, one per row. */
+@media (min-width: 640px) { .groups { grid-template-columns: 1fr 1fr; } }
 
-.checks, .events { list-style: none; margin: 0; padding: 0; }
-.check { border-top: 1px solid var(--line); padding: 10px 0; }
-.check:first-child { border-top: 0; padding-top: 2px; }
-.check-head { display: flex; gap: 10px; align-items: flex-start; }
-.check-head[role="button"] { cursor: pointer; }
-.check-body { flex: 1; min-width: 0; }
-.check-label { font-weight: 650; display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
-.check-summary { color: var(--muted); overflow-wrap: anywhere; }
-.check-fail .check-summary { color: var(--fail); }
-.check-warn .check-summary { color: var(--warn); }
-.check-off { opacity: .6; }
-.check-actions { display: flex; gap: 8px; margin: 8px 0 0 22px; }
-.chev { color: var(--muted); padding: 0 2px; }
-.meta { font-weight: 400; font-size: 13px; color: var(--muted); }
+.card { background: var(--card); border-radius: 12px; padding: 6px 8px 8px; border: 1px solid var(--line); }
+.card-fail { border-color: color-mix(in srgb, var(--fail) 45%, var(--line)); }
+.card-warn { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.card h2 {
+  display: flex; align-items: baseline; gap: 6px; margin: 0 2px 5px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+}
+.card h2 .meta { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
 
-.dot { flex: none; width: 12px; height: 12px; border-radius: 50%; margin-top: 5px; background: var(--off); }
-.card h2 .dot { margin-top: 0; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 5px; }
+.tile {
+  font: inherit; color: inherit; border: 0; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  min-height: 54px; padding: 5px 2px; border-radius: 9px; background: var(--bg); min-width: 0;
+}
+.tile:active { filter: brightness(.95); }
+.tiles-small { grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 4px; }
+.tiles-small .tile { min-height: 42px; padding: 3px 1px; }
+.tiles-small .dot { width: 10px; height: 10px; }
+.tiles-small .tile-name { font-size: 11px; }
+.tiles-small .tile-value { font-size: 10px; }
+.tile-warn { background: var(--warn-bg); }
+.tile-fail { background: var(--fail-bg); }
+.tile-off, .tile-unknown { opacity: .6; }
+.tile-name { font-size: 12px; font-weight: 650; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-value { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tile-fail .tile-value { color: var(--fail); font-weight: 700; }
+.tile-warn .tile-value { color: var(--warn); font-weight: 700; }
+
+/* A meter takes two columns, so the bar has room to be read. */
+.tile-meter { grid-column: span 2; align-items: stretch; padding: 6px 8px; }
+.tile-top { display: flex; align-items: center; gap: 5px; }
+.tile-meter .tile-value { text-align: left; }
+.bar { display: block; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 2px 0; }
+.bar-fill { display: block; height: 100%; background: var(--ok); }
+.bar-warn { background: var(--warn); }
+.bar-fail { background: var(--fail); }
+
+.dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--off); }
 .dot-ok { background: var(--ok); }
 .dot-warn { background: var(--warn); }
-.dot-fail { background: var(--fail); }
+.dot-fail { background: var(--fail); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fail) 25%, transparent); }
+.tile-meter .dot { width: 9px; height: 9px; box-shadow: none; }
+
+.foot { text-align: center; font-size: 12px; padding: 10px 0 0; }
+
+/* --- the sheet and dialogs ------------------------------------------------------- */
+dialog {
+  border: 0; border-radius: 16px; padding: 16px; width: min(460px, calc(100vw - 24px));
+  max-height: calc(100vh - 48px); overflow: auto; background: var(--card); color: var(--ink);
+}
+dialog::backdrop { background: rgba(0, 0, 0, .45); }
+dialog h2 { margin: 0 0 6px; font-size: 18px; }
+.sheet-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.sheet-title .chip { color: #fff; font-size: 12px; font-weight: 600; }
+.chip-ok { background: var(--ok); }
+.chip-warn { background: var(--warn); }
+.chip-fail { background: var(--fail); }
+.chip-off, .chip-unknown { background: var(--off); }
+.sheet-summary { margin: 4px 0 8px; overflow-wrap: anywhere; }
+dialog input { width: 100%; font: inherit; font-size: 22px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); letter-spacing: .2em; }
 
 .log {
   background: var(--log-bg); border-radius: 8px; padding: 8px 10px; margin: 8px 0 0;
   font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
-  max-height: 320px; overflow: auto;
+  max-height: 300px; overflow: auto;
 }
 
-.events li { padding: 6px 0; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; }
+.events { list-style: none; margin: 0; padding: 0; }
+.events li { padding: 6px 0; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; font-size: 14px; }
 .events li:first-child { border-top: 0; }
-.events .dot { margin-top: 0; width: 9px; height: 9px; align-self: center; }
+.events .dot { width: 9px; height: 9px; align-self: center; box-shadow: none; }
 
-.pill, .btn {
-  font: inherit; border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
-  padding: 6px 14px; text-decoration: none; display: inline-block; cursor: pointer;
+.btn {
+  font: inherit; font-weight: 600; border-radius: 999px; padding: 10px 18px; cursor: pointer; text-decoration: none;
+  display: inline-block; background: var(--brand); color: #fff; border: 1px solid var(--brand);
 }
-.pill { font-size: 14px; padding: 4px 12px; }
-.btn { padding: 10px 18px; font-weight: 600; background: var(--brand); color: #fff; border-color: var(--brand); }
 .btn-quiet { background: var(--card); color: var(--ink); border-color: var(--line); }
 .btn-danger { background: var(--fail); border-color: var(--fail); }
 button:disabled { opacity: .55; cursor: default; }
-.row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 
 .muted { color: var(--muted); }
+.small { font-size: 13px; }
 .error { color: var(--fail); font-weight: 600; }
-.foot { text-align: center; font-size: 13px; padding: 8px 0; }
-
-dialog { border: 0; border-radius: 16px; padding: 18px; width: min(440px, calc(100vw - 32px)); background: var(--card); color: var(--ink); }
-dialog::backdrop { background: rgba(0, 0, 0, .45); }
-dialog h2 { margin: 0 0 6px; font-size: 19px; }
-dialog input { width: 100%; font: inherit; font-size: 22px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); letter-spacing: .2em; }

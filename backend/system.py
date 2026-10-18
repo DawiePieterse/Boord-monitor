@@ -11,11 +11,13 @@ import json
 import os
 import shutil
 import socket
+import sqlite3
 import ssl
 import subprocess
 import sys
 import time
-from typing import List, Optional
+import urllib.request
+from typing import Dict, List, Optional
 
 import httpx
 
@@ -169,6 +171,77 @@ class System:
                 return fh.read().decode("utf-8", "replace")
         except OSError:
             return None
+
+    def newest_file(self, folder: str, max_files: int = 5000) -> Optional[tuple]:
+        """(path, modified time as naive UTC) of the newest file anywhere
+        under `folder`, or None if it holds no files. Raises OSError if the
+        folder itself can't be read. Capped, because a misconfigured line
+        pointing at the root of a drive must not make the check walk the
+        whole disk every minute."""
+        if not os.path.isdir(folder):
+            raise FileNotFoundError(folder)
+        best = None
+        seen = 0
+        for root, _dirs, files in os.walk(folder):
+            for name in files:
+                seen += 1
+                if seen > max_files:
+                    break
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if best is None or mtime > best[1]:
+                    best = (path, mtime)
+            if seen > max_files:
+                break
+        if best is None:
+            return None
+        return best[0], dt.datetime.utcfromtimestamp(best[1])
+
+    def process_running(self, image: str) -> Optional[bool]:
+        """Whether a process with this .exe name is running in any session,
+        or None where that can't be asked (not Windows). tasklist rather
+        than PowerShell: it starts in a fraction of the time, and only the
+        image name is looked for in its output, so the PC's display
+        language does not matter."""
+        if not IS_WINDOWS:
+            return None
+        rc, out, _err = self.run(["tasklist", "/FI", f"IMAGENAME eq {image}", "/NH", "/FO", "CSV"], 15)
+        if rc != 0:
+            return None
+        return image.lower() in out.lower()
+
+    def boord_devices(self, db_path: str) -> Optional[Dict[str, dict]]:
+        """{Boord device id: {station, role, active, last_seen, last_sync}}
+        from Boord's database, or None if it can't be read.
+
+        Opened read-only (mode=ro), as Boord Labour opens it: the monitor
+        must never be the thing holding a write lock on the pack house's
+        database. last_sync is the newest crate's synced_at - the server's
+        own clock, so a tablet with a wrong date can't fake it. One GROUP BY
+        over harvestrecord a minute is a few milliseconds even at a whole
+        season's crates."""
+        if not os.path.exists(db_path):
+            return None
+        uri = "file:" + urllib.request.pathname2url(os.path.abspath(db_path)) + "?mode=ro"
+        try:
+            con = sqlite3.connect(uri, uri=True, timeout=5)
+            try:
+                rows = con.execute("SELECT id, station, role, active, last_seen FROM device").fetchall()
+                synced = dict(con.execute(
+                    "SELECT device_id, MAX(synced_at) FROM harvestrecord "
+                    "WHERE device_id IS NOT NULL GROUP BY device_id").fetchall())
+            finally:
+                con.close()
+        except sqlite3.Error:
+            # Missing table or column after a Boord schema change, or the
+            # file locked mid-migration: no Boord detail this minute, but the
+            # devices' Tailscale status still shows.
+            return None
+        return {r[0]: {"station": r[1] or "", "role": r[2] or "", "active": bool(r[3]),
+                       "last_seen": r[4], "last_sync": synced.get(r[0])} for r in rows}
 
     def is_windows(self) -> bool:
         return IS_WINDOWS

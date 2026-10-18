@@ -14,6 +14,12 @@ phone alert when it isn't. It watches:
 - **The farm PC**: free disk space, memory, and when it last restarted.
 - **The safety nets**: whether Boord's watchdog and heartbeat tasks are set
   up and running, and what the watchdog restarted in the last day.
+- **Google Drive backups**, if you set them up (chapter 5): whether a fresh
+  backup has reached each folder Google Drive uploads, and whether Google
+  Drive is running to upload it.
+- **The devices** on the tailnet (chapter 6): which phones, tablets and
+  computers are online now, and when each was last seen. For Boord's
+  tablets it also shows when each last sent in a crate.
 
 It runs in two places:
 
@@ -45,7 +51,7 @@ Install Boord first: the Restart button uses Boord's `watchdog.ps1`.
    ```
    It then answers at `https://<farm-pc>.<tailnet>.ts.net:8050/`.
 4. Write down the **remote token** that `install.bat` prints at the end. You
-   only need it for the off-site watcher (chapter 5). It is also in
+   only need it for the off-site watcher (chapter 7). It is also in
    `data\remote_token.txt`.
 5. Set the release key fingerprint, exactly as the installer says, so
    `update_monitor_server.bat` can install signed updates. If Boord runs on
@@ -76,15 +82,41 @@ The **banner** at the top is the answer:
   getting full, the PC rebooted half an hour ago, or an app is answering
   with errors.
 - **Red, "N problems"**: something is broken now. Each problem is listed
-  under the banner.
+  under the banner, one line each. Tap a line to read the rest.
 
-Below the banner, every check is listed by group. Tap a check with **▸**
-to see its detail. For example, Published ports shows the PC's live
-mapping, and the watchdog log shows its last lines. Each app has **Open**,
-which takes you to the app itself.
+Below the banner, every check is a small **tile**, grouped by what it
+watches, and the whole farm fits on one phone screen:
 
-The page refreshes every 30 seconds. The monitor itself checks every
-minute. **Check now** runs the checks immediately.
+- The **dot** is the check's state: green is fine, amber needs a look, red
+  is broken and grey means not installed or can't be checked here.
+- The **name** is short (Owner for Boord Owner, Ports for Published ports,
+  Cert for the HTTPS certificate).
+- The **number** under it is the one worth knowing:
+
+  | Tile | Number |
+  | --- | --- |
+  | An app | how fast it answered, or *down* |
+  | Key, Cert | days until they expire |
+  | Ports | apps published correctly, e.g. 5/6 |
+  | Uptime, Watchdog, Heartbeat, backup folders | how long since boot, the last run, or the newest backup |
+  | Restarts | how many times the watchdog restarted an app in the last day |
+  | A device | *on* when online, otherwise how long since it was last seen |
+
+- **Disk** and **Memory** are bars: the fuller the bar, the fuller the disk
+  or memory.
+
+**Tap any tile** for the whole explanation and what to do about it. For
+example, Ports shows the PC's live mapping, and Restarts shows the
+watchdog's last log lines. An app's sheet has **Open app** and **Restart**.
+
+The three icons at the top right are:
+
+- the **clock**: recent changes;
+- the **bell**: alerts on this phone, with a small green dot when they are on;
+- the **circular arrow**: check now.
+
+The page refreshes every 30 seconds, and the monitor itself checks every
+minute.
 
 If your phone loses contact with the monitor, the last picture stays on
 screen with a note saying how old it is.
@@ -102,6 +134,8 @@ screen with a note saying how old it is.
 | *Database migrations were not applied* | An update of Boord didn't finish. Run Boord's `update_server.bat` again. |
 | *Disk almost full* | Free space on the farm PC. SQLite can't write without room. |
 | *Watchdog / Heartbeat: Not set up* | Run Boord's `setup_watchdog.bat` / `setup_heartbeat.bat`. |
+| *Google Drive: Not running* | Nothing is being uploaded. Log in on the farm PC and start Google Drive if it doesn't start itself. |
+| *The newest backup is N days old* | Backups have stopped reaching that folder. Check the app's own backup card, then the folder. |
 
 ## 3. Alerts on your phone
 
@@ -112,7 +146,7 @@ Alerts are **push notifications** from the farm PC to your phone.
 1. Open the monitor's address in Safari.
 2. Tap **Share**, then **Add to Home Screen**.
 3. Open **Monitor** from the Home Screen icon. Not from Safari.
-4. Scroll down to **Alerts on this phone** and tap **Turn on alerts**.
+4. Tap the **bell** at the top right, then **Turn on alerts**.
    Enter the PIN if asked, then tap **Turn on alerts** again, and allow
    notifications.
 5. Tap **Send a test**. A notification should arrive within a few seconds.
@@ -141,7 +175,7 @@ quiet, and it alerts you instead.
 
 ## 4. Restarting an app
 
-Sign in, then tap **Restart** on the app's card. Everyone using that app
+Tap the app's tile, then **Restart**, and enter the PIN if asked. Everyone using that app
 loses it for up to a minute. Phones keep what they scanned and send it once
 the app is back.
 
@@ -158,7 +192,109 @@ as an automatic one:
 The watchdog's own words appear in the restart window and in
 `data\watchdog.log`.
 
-## 5. The off-site watcher
+## 5. Google Drive backups
+
+If Google Drive for Desktop uploads backups from the farm PC, the monitor
+can check that it is still happening. It checks two things:
+
+- **That Google Drive is running.** Google Drive for Desktop is not a
+  service. It runs only while someone is logged in to Windows. If the PC
+  restarts for an update at night and sits at the login screen, the apps
+  come back and keep making backups, but nothing uploads them. If Drive is
+  not running half an hour after the PC started, you get an alert.
+- **That each folder has a fresh backup.** The newest file anywhere in the
+  folder, including its subfolders, must be newer than a limit you set.
+  An older one sends an alert.
+
+Turn it on by creating `data\drive_backups.txt` in the monitor's folder,
+with one folder per line. Optionally add `|` and the most days the newest
+backup may be old. The default is 3.
+
+```
+# Folders Google Drive uploads. See MANUAL.md chapter 5.
+C:\Users\Andre\My Drive\Farm backups\Boord
+C:\Users\Andre\My Drive\Farm backups\Kudde | 7
+```
+
+The file is read on every check, so changes need no restart. Each folder
+appears on the dashboard under **Google Drive backups**, named after its
+last part.
+
+**Name the folder on C:, not on Google Drive's G: drive.** The monitor runs
+as SYSTEM. Google Drive mounts its G: drive only for the person logged in,
+so SYSTEM cannot see it. Use the real folder on C: that Drive uploads:
+
+- **Mirror files:** with Drive set to *Mirror files*, that is under
+  `C:\Users\<you>\My Drive`.
+- **Folders from your computer:** if Drive backs up a folder from your
+  computer, use that folder itself.
+
+A folder the monitor can't open shows amber with this explanation. It never
+sends an alert.
+
+**What this proves and what it doesn't.** A green folder means a new
+backup arrived where Drive picks it up, and Drive was running. It can't see
+inside Drive, so it can't prove the upload finished. If Drive is signed
+out, out of storage or stuck, check the Drive icon by the clock. Open
+drive.google.com now and then to see the files are really there.
+
+**Quiet seasons.** Boord skips the nightly backup when nothing changed, so
+out of season a week-old newest backup can be normal. Give that folder a
+longer limit (`| 30`) instead of muting the alerts.
+
+> Boord's manual (chapter 11) warns against copying its backups to a
+> personal cloud account. The archives are not encrypted, and they hold
+> every worker's name, WhatsApp number and photograph. This check watches
+> whatever you set up. It doesn't make that choice safer.
+
+## 6. Devices
+
+Every phone, tablet and computer on the farm's tailnet appears under
+**Devices**, without any setup:
+
+- **Green dot, *on*:** online now.
+- **Grey dot with a time (*2h*, *3d*):** offline, and how long ago it was
+  last seen.
+
+**Offline is not a problem**, so it never turns the banner amber and never
+sends an alert. Tablets are switched off at night and lose signal in the
+orchard, so an alert every evening would teach everyone to ignore the
+monitor. Glance at the grey dots instead. A tablet that should be picking
+and has been grey for an hour is worth a phone call.
+
+**The one warning is amber, for a device whose Tailscale key expires within
+two weeks.** When it lapses, that device drops off the tailnet and loses
+every app. To prevent it, open the Tailscale admin console, open the
+device's menu and choose **Disable key expiry**.
+
+**Boord's tablets show more.** If a device's Tailscale name is its Boord
+device id (`device-03`), its sheet also says:
+
+- its station and role in Boord;
+- when Boord last received a crate from it. This uses the farm PC's clock,
+  so a tablet with the wrong date can't make it look current.
+
+The tile shows Boord's ids short, as *Dev 03*. The monitor reads Boord's
+database only to look; it never changes it.
+
+**Choosing and naming the devices.** By default every device on the tailnet
+is shown under its Tailscale name. To show only some, in your own order and
+with your own names, create `data\devices.txt`:
+
+```
+# Tailscale name | name to show | Boord device id
+ipad-7f3a        | Field 1      | device-01
+ipad-91c2        | Field 2      | device-02
+galaxy-tab       | Bin tip      | device-06
+andre-iphone     | Andre
+```
+
+The Tailscale name is the machine's name in the Tailscale admin console.
+The other two columns are optional. Keep names short: a tile has room for
+about six letters. If a listed name is no longer on the tailnet (renamed,
+or removed), its tile turns amber and says so.
+
+## 7. The off-site watcher
 
 Run this on a machine that stays on, stays awake and is on the tailnet. The
 owner's Mac is the usual choice. It needs Python 3.9 or newer.
@@ -198,7 +334,7 @@ the farm about the owner's Mac being offline would be a false alarm.
 
 To change the farm address or token, run the script again.
 
-## 6. Updating
+## 8. Updating
 
 On the farm PC, double-click **`update_monitor_server.bat`**. As with
 Boord, it installs only releases signed with the release key, then
@@ -212,7 +348,7 @@ git checkout <newest tag>
 remote/install_remote.sh <same URL> <same token>
 ```
 
-## 7. Files
+## 9. Files
 
 | File | What it is |
 | --- | --- |
@@ -220,6 +356,8 @@ remote/install_remote.sh <same URL> <same token>
 | `data\vapid_private.pem` | The key that signs alerts. Anyone holding it can send notifications to your phones. |
 | `data\subscriptions.json` | The phones that turned on alerts. |
 | `data\remote_token.txt` | Lets the off-site watcher copy the two files above. |
+| `data\drive_backups.txt` | The Google Drive backup folders to check (chapter 5). Not a credential. |
+| `data\devices.txt` | Which devices to show, and their names (chapter 6). Optional. |
 | `data\state.json` | What has been alerted, so a restart of the monitor doesn't re-send standing problems. |
 
 None of these is committed to git. If you lose `data\`, everything still

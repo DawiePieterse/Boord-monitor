@@ -26,12 +26,20 @@ const SHOT_DIR = process.env.SHOT_DIR || os.tmpdir();
     await page.goto(BASE, { waitUntil: "networkidle" });
     await page.waitForFunction(() => document.getElementById("banner-title").textContent !== "Checking…");
     const title = await page.textContent("#banner-title");
-    const rows = await page.locator(".check").count();
+    const rows = await page.locator(".tile").count();
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
+    // The phone layout's whole point is one screen: nothing to scroll to.
+    const tall = await page.evaluate(() => document.documentElement.scrollHeight);
     const shot = path.join(SHOT_DIR, `monitor-${name}.png`);
     await page.screenshot({ path: shot, fullPage: true });
-    console.log(`${name}: banner "${title}", ${rows} checks, screenshot ${shot}`);
-    if (rows < 5) { console.error(`${name}: expected the check list to render`); failed = true; }
+    console.log(`${name}: banner "${title}", ${rows} tiles, page ${tall}px tall, screenshot ${shot}`);
+    if (name === "phone" && tall > viewport.height) { console.error(`phone: needs scrolling (${tall}px > ${viewport.height}px)`); failed = true; }
+    if (rows < 5) { console.error(`${name}: expected the tiles to render`); failed = true; }
+    // Tap a tile: its sheet must open with the full sentence in it.
+    await page.locator(".tile").first().click();
+    const sheet = await page.locator("#sheet[open] .sheet-summary").textContent();
+    if (!sheet) { console.error(`${name}: tapping a tile opened no detail`); failed = true; }
+    await page.locator("#sheet-close").click();
     if (overflow) { console.error(`${name}: page scrolls sideways`); failed = true; }
     if (errors.length) { console.error(`${name}: page errors:\n  ${errors.join("\n  ")}`); failed = true; }
     await page.close();

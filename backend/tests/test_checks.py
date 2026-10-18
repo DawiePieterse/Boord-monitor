@@ -187,3 +187,27 @@ def test_watchdog_log(fake):
     assert c["status"] == "warn"
     assert "REFUSING" in c["summary"]
     assert c["alert"] is False
+
+
+def test_every_tile_has_something_to_show(fake):
+    """The dashboard's tiles show `value`, or fall back to the status. The
+    numbers people glance at must be there."""
+    fake.ts = ts_status(key_expiry=(NOW + dt.timedelta(days=62)).isoformat() + "Z")
+    results = by_id(checks.farm_checks(fake))
+    assert results["app.boord"]["value"] == "15ms"
+    assert results["ts.key"]["value"] == "62d"
+    assert results["ts.serve"]["value"] == "6/6"
+    assert results["ts.cert"]["value"] == "60d"
+    assert results["pc.disk"]["value"] == "120 GB free" and results["pc.disk"]["pct"] == 76
+    assert results["pc.memory"]["value"] == "50% used" and results["pc.memory"]["pct"] == 50
+    assert results["pc.uptime"]["value"] == "3d"
+    assert results["guards.watchdog"]["value"] == "2m"
+    fake.down.add(8000)
+    fake.serve = serve_for({**GOOD_SERVE, 443: 8010})
+    results = by_id(checks.farm_checks(fake))
+    assert results["app.boord"]["value"] == "down"
+    assert results["ts.serve"]["value"] == "5/6"
+
+
+def test_short_durations():
+    assert [checks._short(s) for s in (40, 61, 3 * 3600, 86400, 3 * 86400)] == ["40s", "1m", "3h", "24h", "3d"]

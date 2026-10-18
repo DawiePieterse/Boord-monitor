@@ -92,6 +92,24 @@ FARM_URL = os.environ.get("MONITOR_FARM_URL", "").rstrip("/")
 # on first start; it is copied once, by hand, to the remote machine.
 REMOTE_TOKEN_FILE = os.path.join(DATA_DIR, "remote_token.txt")
 
+# --- Google Drive backups (farm role) ----------------------------------------
+# One folder per line: a folder Google Drive for Desktop uploads, and the most
+# days its newest file may be old, after a "|". Lines starting with # are
+# ignored; no file means the check is off. Read on every run, so editing it
+# needs no restart. See MANUAL.md, "Google Drive backups".
+DRIVE_BACKUPS_FILE = os.path.join(DATA_DIR, "drive_backups.txt")
+DRIVE_DEFAULT_DAYS = 3
+
+# --- devices on the tailnet (farm role) --------------------------------------
+# Optional. Without it every device on the tailnet is shown under its
+# Tailscale name. With it, only the devices listed, one per line:
+#     <Tailscale machine name> | <name to show> | <Boord device id>
+# The last two are optional. See MANUAL.md, "Devices".
+DEVICES_FILE = os.path.join(DATA_DIR, "devices.txt")
+
+# Boord's database, read-only, for when each Boord device last sent a crate.
+BOORD_DB = os.path.join(BOORD_DIR, "data", "boord.db")
+
 # VAPID's "sub" claim: who to contact about this sender. Apple rejects a push
 # whose claim is not a mailto: or https: URL, so it has to look like one.
 VAPID_SUB = os.environ.get("MONITOR_VAPID_SUB", "mailto:boord-monitor@example.com")
