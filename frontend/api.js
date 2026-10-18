@@ -4,7 +4,7 @@ const Monitor = {
   // Boord Monitor's release. Bump on every deploy that touches frontend code,
   // together with CACHE in service-worker.js; scripts/release.sh refuses a
   // tag that disagrees with it, and /api/version reads it back.
-  VERSION: "1.2.0",
+  VERSION: "1.3.0",
 
   async api(path, options = {}) {
     const opts = { credentials: "same-origin", ...options };

@@ -587,6 +587,127 @@ def drive_checks(sys: System) -> List[dict]:
     return out
 
 
+# --- devices on the tailnet --------------------------------------------------
+
+def read_device_list() -> Optional[List[tuple]]:
+    """[(tailscale name, label, boord id)] from data/devices.txt, or None when
+    there is no such file (then every device on the tailnet is shown)."""
+    try:
+        with open(config.DEVICES_FILE, encoding="utf-8-sig") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return None
+    out = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = [p.strip() for p in line.split("|")] + ["", ""]
+        if parts[0]:
+            out.append((parts[0], parts[1] or parts[0], parts[2]))
+    return out
+
+
+def _peer_names(peer: dict) -> set:
+    """Every name a person might write for a peer: its host name and the
+    first label of its MagicDNS name, which differ when two machines share a
+    host name and Tailscale appends -1."""
+    names = {str(peer.get("HostName") or "").lower()}
+    dns = str(peer.get("DNSName") or "")
+    if dns:
+        names.add(dns.split(".")[0].lower())
+    names.discard("")
+    return names
+
+
+def device_checks(sys: System, status: Optional[dict]) -> List[dict]:
+    """One tile per phone, tablet and computer on the tailnet: is it online
+    now, or when was it last seen, and is its Tailscale key about to lapse.
+    For Boord's own devices, also when each last sent a crate.
+
+    None of this ever pages anyone. Tablets are switched off at night and lose
+    signal in the orchard, so "offline" is the normal state for half the day
+    - it shows grey, not amber, and the banner ignores it. The one thing
+    worth a warning is a key about to expire: that device drops off the
+    tailnet, and every app with it, on a date that can be seen coming."""
+    if not status or status.get("BackendState") != "Running":
+        return []
+    peers = [p for p in (status.get("Peer") or {}).values()
+             if isinstance(p, dict) and not p.get("ShareeNode")]
+    listed = read_device_list()
+    boord = sys.boord_devices(config.BOORD_DB)
+
+    if listed is None:
+        wanted = [(n, n, "") for n in sorted({p.get("HostName") or "?" for p in peers}, key=str.lower)]
+    else:
+        wanted = listed
+
+    out = []
+    for name, label, boord_id in wanted:
+        key = name.lower()
+        peer = next((p for p in peers if key in _peer_names(p)), None)
+        cid = "dev." + key
+        if peer is None:
+            out.append(check(cid, "devices", label, "warn",
+                             f"No device called '{name}' on the tailnet. Renamed, or removed from "
+                             "Tailscale? Check data\\devices.txt against the Tailscale admin console.",
+                             alert=False, value="?"))
+            continue
+
+        detail = []
+        os_name = peer.get("OS") or "?"
+        ips = ", ".join(peer.get("TailscaleIPs") or [])
+        detail.append(f"Tailscale: {peer.get('HostName')} ({os_name}) {ips}")
+        if peer.get("Online"):
+            status_, value, summary = "ok", "on", "Online now."
+        else:
+            seen = _parse_iso(peer.get("LastSeen"))
+            if seen and seen.year > 2000:
+                age = (sys.now() - seen).total_seconds()
+                status_, value = "off", _short(age)
+                summary = f"Offline - last seen {_ago(age)} ago."
+            else:
+                status_, value, summary = "off", "off", "Offline."
+
+        # A device's own key expiry, as for the farm PC's (tailscale_checks).
+        expiry = _parse_iso(peer.get("KeyExpiry"))
+        if expiry and expiry.year > 2000:
+            days = (expiry - sys.now()).total_seconds() / 86400
+            if days < 14:
+                status_ = "warn"
+                when = expiry.strftime("%Y-%m-%d")
+                summary = (f"Its Tailscale key {'expired on ' + when if days < 0 else 'expires ' + when}: "
+                           "it will drop off the tailnet. In the Tailscale admin console, choose "
+                           "'Disable key expiry' for this device. " + summary)
+
+        # Boord: by the id given in devices.txt, or by the Tailscale name when
+        # the tablet was simply named after its Boord slot (device-03).
+        bid = boord_id or (key if boord and key in boord else "")
+        info = (boord or {}).get(bid) if bid else None
+        if info:
+            detail.append(f"Boord: {bid}" + (f" - {info['station']}" if info["station"] else "")
+                          + f" ({info['role']})")
+            sync = _parse_iso(str(info["last_sync"]).replace(" ", "T")) if info["last_sync"] else None
+            opened = _parse_iso(str(info["last_seen"]).replace(" ", "T")) if info["last_seen"] else None
+            if sync:
+                age = (sys.now() - sync).total_seconds()
+                detail.append(f"Last crate received: {_ago(age)} ago ({sync.strftime('%Y-%m-%d %H:%M')} UTC)")
+                summary += f" Last crate received {_ago(age)} ago."
+            elif info["role"] == "field":
+                detail.append("Last crate received: never")
+            if opened:
+                detail.append(f"Boord last opened: {_ago((sys.now() - opened).total_seconds())} ago")
+        elif bid:
+            detail.append(f"Boord: no device '{bid}' in Boord's list")
+
+        c = check(cid, "devices", label, status_, summary, detail, alert=False, value=value)
+        if status_ == "off":
+            # The sheet's word for grey here is "Offline", not "Not installed".
+            c["word"] = "Offline"
+        out.append(c)
+    return out
+
+
 # --- the whole picture, per role --------------------------------------------
 
 def farm_checks(sys: System) -> List[dict]:
@@ -616,6 +737,7 @@ def farm_checks(sys: System) -> List[dict]:
                            "No email reaches anyone when this PC is off - run Boord's setup_heartbeat.bat."))
     out.append(watchdog_log_check(sys))
     out.extend(drive_checks(sys))
+    out.extend(device_checks(sys, status))
     return out
 
 

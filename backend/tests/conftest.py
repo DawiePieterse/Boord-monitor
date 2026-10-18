@@ -27,11 +27,27 @@ NOW = dt.datetime(2026, 10, 18, 8, 0, 0)
 DNS = "farm-pc.tail1234.ts.net"
 
 
-def ts_status(state="Running", online=True, key_expiry=None, health=None):
+def ts_status(state="Running", online=True, key_expiry=None, health=None, peers=None):
     me = {"DNSName": DNS + ".", "Online": online, "TailscaleIPs": ["100.64.0.1"]}
     if key_expiry:
         me["KeyExpiry"] = key_expiry
-    return {"BackendState": state, "Self": me, "Health": health or []}
+    out = {"BackendState": state, "Self": me, "Health": health or []}
+    if peers:
+        out["Peer"] = {f"nodekey:{i}": p for i, p in enumerate(peers)}
+    return out
+
+
+def peer(host, online=True, last_seen=None, key_expiry=None, os="iOS", dns=None, sharee=False):
+    """One entry of `tailscale status --json`'s Peer map."""
+    p = {"HostName": host, "DNSName": (dns or host) + ".tail1234.ts.net.", "OS": os,
+         "Online": online, "TailscaleIPs": ["100.64.0.9"]}
+    if last_seen:
+        p["LastSeen"] = last_seen
+    if key_expiry:
+        p["KeyExpiry"] = key_expiry
+    if sharee:
+        p["ShareeNode"] = True
+    return p
 
 
 def serve_for(mapping, funnel=()):
@@ -73,6 +89,7 @@ class FakeSystem:
         self.log_text = None
         self.drive_running = True
         self.folders = {}  # folder -> newest file's (path, mtime) or None; absent = can't open
+        self.boord = None  # what boord_devices returns
         self.versions = {8000: {"version": "3.15", "tag": "v3.15", "migrations_applied": True,
                                 "backups": {"last": "2026-10-18 02:00", "count": 14}, "update": None},
                          8040: {"tag": "v1.0.2"}, 8050: {"tag": "v1.0.0"}}
@@ -141,6 +158,9 @@ class FakeSystem:
         if folder not in self.folders:
             raise FileNotFoundError(folder)
         return self.folders[folder]
+
+    def boord_devices(self, db_path):
+        return self.boord
 
     def process_running(self, image):
         return self.drive_running if self.windows else None

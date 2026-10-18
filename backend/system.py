@@ -11,11 +11,13 @@ import json
 import os
 import shutil
 import socket
+import sqlite3
 import ssl
 import subprocess
 import sys
 import time
-from typing import List, Optional
+import urllib.request
+from typing import Dict, List, Optional
 
 import httpx
 
@@ -210,6 +212,36 @@ class System:
         if rc != 0:
             return None
         return image.lower() in out.lower()
+
+    def boord_devices(self, db_path: str) -> Optional[Dict[str, dict]]:
+        """{Boord device id: {station, role, active, last_seen, last_sync}}
+        from Boord's database, or None if it can't be read.
+
+        Opened read-only (mode=ro), as Boord Labour opens it: the monitor
+        must never be the thing holding a write lock on the pack house's
+        database. last_sync is the newest crate's synced_at - the server's
+        own clock, so a tablet with a wrong date can't fake it. One GROUP BY
+        over harvestrecord a minute is a few milliseconds even at a whole
+        season's crates."""
+        if not os.path.exists(db_path):
+            return None
+        uri = "file:" + urllib.request.pathname2url(os.path.abspath(db_path)) + "?mode=ro"
+        try:
+            con = sqlite3.connect(uri, uri=True, timeout=5)
+            try:
+                rows = con.execute("SELECT id, station, role, active, last_seen FROM device").fetchall()
+                synced = dict(con.execute(
+                    "SELECT device_id, MAX(synced_at) FROM harvestrecord "
+                    "WHERE device_id IS NOT NULL GROUP BY device_id").fetchall())
+            finally:
+                con.close()
+        except sqlite3.Error:
+            # Missing table or column after a Boord schema change, or the
+            # file locked mid-migration: no Boord detail this minute, but the
+            # devices' Tailscale status still shows.
+            return None
+        return {r[0]: {"station": r[1] or "", "role": r[2] or "", "active": bool(r[3]),
+                       "last_seen": r[4], "last_sync": synced.get(r[0])} for r in rows}
 
     def is_windows(self) -> bool:
         return IS_WINDOWS

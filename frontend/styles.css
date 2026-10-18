@@ -94,7 +94,7 @@ main { max-width: 720px; margin: 0 auto; padding: 10px 12px 12px; }
 .notice { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 6px 10px; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
 
 /* --- groups of tiles ------------------------------------------------------------ */
-.groups { display: grid; gap: 8px; }
+.groups { display: grid; gap: 7px; }
 /* On a wide screen two groups sit side by side; on a phone, one per row. */
 @media (min-width: 640px) { .groups { grid-template-columns: 1fr 1fr; } }
 
@@ -111,9 +111,14 @@ main { max-width: 720px; margin: 0 auto; padding: 10px 12px 12px; }
 .tile {
   font: inherit; color: inherit; border: 0; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  min-height: 58px; padding: 6px 2px; border-radius: 9px; background: var(--bg); min-width: 0;
+  min-height: 54px; padding: 5px 2px; border-radius: 9px; background: var(--bg); min-width: 0;
 }
 .tile:active { filter: brightness(.95); }
+.tiles-small { grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 4px; }
+.tiles-small .tile { min-height: 42px; padding: 3px 1px; }
+.tiles-small .dot { width: 10px; height: 10px; }
+.tiles-small .tile-name { font-size: 11px; }
+.tiles-small .tile-value { font-size: 10px; }
 .tile-warn { background: var(--warn-bg); }
 .tile-fail { background: var(--fail-bg); }
 .tile-off, .tile-unknown { opacity: .6; }

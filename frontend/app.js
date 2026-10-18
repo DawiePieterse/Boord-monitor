@@ -14,6 +14,7 @@ const GROUPS = {
     ["pc", "Farm PC"],
     ["guards", "Safety nets"],
     ["backups", "Drive backups"],
+    ["devices", "Devices"],
   ],
   remote: [
     ["farm", "The farm, seen from outside"],
@@ -66,7 +67,13 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
-const short = (c) => SHORT[c.label] || c.label;
+// Boord's own device ids (device-01) are cut to "Dev 01" - the tile has room
+// for about six letters, and "device-…" nine times over says nothing. Any
+// other name can be set in data/devices.txt.
+const short = (c) => SHORT[c.label] || c.label.replace(/^device-(\d+)$/i, "Dev $1");
+// A check may name its own state - a device that is merely switched off says
+// "Offline", where an app in the same grey says "Not installed".
+const word = (c) => c.word || STATUS_WORD[c.status] || c.status;
 
 function dot(status) {
   return el("span", { class: `dot dot-${status}`, "aria-hidden": "true" });
@@ -76,7 +83,7 @@ function dot(status) {
 
 function tile(c) {
   const value = c.value || STATUS_VALUE[c.status] || "";
-  const label = `${c.label}: ${STATUS_WORD[c.status] || c.status}. ${c.summary}`;
+  const label = `${c.label}: ${word(c)}. ${c.summary}`;
   // A tile with a percentage is drawn as a meter: a bar says "nearly full"
   // faster than any number can.
   if (typeof c.pct === "number") {
@@ -92,13 +99,14 @@ function tile(c) {
     el("span", { class: "tile-value" }, value));
 }
 
-function groupCard(title, checks, note) {
+function groupCard(title, checks, note, key) {
   if (!checks.length) return null;
   const worst = checks.some((c) => c.status === "fail") ? "fail"
     : checks.some((c) => c.status === "warn") ? "warn" : "ok";
   return el("section", { class: `card card-${worst}` },
     el("h2", {}, title, note ? el("span", { class: "meta" }, note) : null),
-    el("div", { class: "tiles" }, checks.map(tile)));
+    // Devices can run to a dozen, so their tiles are smaller - six across.
+    el("div", { class: key === "devices" ? "tiles tiles-small" : "tiles" }, checks.map(tile)));
 }
 
 function renderBanner(data) {
@@ -122,7 +130,7 @@ function render() {
   renderBanner(last);
   const cards = [];
   for (const [key, title] of GROUPS[last.role]) {
-    cards.push(groupCard(title, last.checks.filter((c) => c.group === key)));
+    cards.push(groupCard(title, last.checks.filter((c) => c.group === key), null, key));
   }
   // The remote watcher also carries the farm's own last report, so the one
   // screen shows both what the farm said about itself and what the outside
@@ -130,7 +138,7 @@ function render() {
   if (last.role === "remote" && last.farm && last.farm.checks) {
     const as = Monitor.time(last.farm.checked_at);
     for (const [key, title] of GROUPS.farm) {
-      cards.push(groupCard(`Farm said: ${title}`, last.farm.checks.filter((c) => c.group === key), as));
+      cards.push(groupCard(`Farm said: ${title}`, last.farm.checks.filter((c) => c.group === key), as, key));
     }
   }
   $("groups").replaceChildren(...cards.filter(Boolean));
@@ -163,7 +171,7 @@ function showCheck(c) {
     actions.push(el("button", { class: "btn", type: "button", onclick: () => { $("sheet").close(); askRestart(c); } }, "Restart"));
   }
   openSheet(
-    el("h2", { class: "sheet-title" }, dot(c.status), c.label, el("span", { class: `chip chip-${c.status}` }, STATUS_WORD[c.status] || c.status)),
+    el("h2", { class: "sheet-title" }, dot(c.status), c.label, el("span", { class: `chip chip-${c.status}` }, word(c))),
     el("p", { class: "sheet-summary" }, c.summary),
     meta.length ? el("p", { class: "muted small" }, meta.join(" · ")) : null,
     c.detail && c.detail.length ? el("pre", { class: "log" }, c.detail.join("\n")) : null,

@@ -45,6 +45,10 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
   - the newest file's age in each folder.
 
   Folders are Windows paths, so use `ntpath`, not `os.path`. A folder on Drive's `G:` mount is invisible to SYSTEM; the check explains that rather than reporting the backups missing.
+- **Devices** (`checks.device_checks`): one tile per tailnet peer, from the same `tailscale status --json` the farm already reads. Optionally filtered and named by `data/devices.txt`.
+  - Offline is status `off` with `word` "Offline". It never warns or alerts, because tablets are off at night.
+  - Only a peer key expiring within 14 days warns.
+  - Boord detail (station, last crate's `synced_at`) comes from Boord's `boord.db`, opened `mode=ro`, via `System.boord_devices`. A schema it can't read just drops the detail.
 - **Up/down follows watchdog.ps1's rule:** any HTTP answer, even 500, means up. A 500 is a warning. `/api/version` is read for info only, never for up/down.
 - **Installed = scheduled task registered** (Windows). An app whose task is absent is `off`, not down, and is not expected in the serve table. Off Windows, `query_tasks` returns None and every app is checked.
 - **Scheduled tasks are read with `Get-ScheduledTaskInfo` → JSON,** not `schtasks /v`, whose labels follow the PC's display language.

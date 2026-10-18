@@ -17,6 +17,9 @@ phone alert when it isn't. It watches:
 - **Google Drive backups**, if you set them up (chapter 5): whether a fresh
   backup has reached each folder Google Drive uploads, and whether Google
   Drive is running to upload it.
+- **The devices** on the tailnet (chapter 6): which phones, tablets and
+  computers are online now, and when each was last seen. For Boord's
+  tablets it also shows when each last sent in a crate.
 
 It runs in two places:
 
@@ -48,7 +51,7 @@ Install Boord first: the Restart button uses Boord's `watchdog.ps1`.
    ```
    It then answers at `https://<farm-pc>.<tailnet>.ts.net:8050/`.
 4. Write down the **remote token** that `install.bat` prints at the end. You
-   only need it for the off-site watcher (chapter 6). It is also in
+   only need it for the off-site watcher (chapter 7). It is also in
    `data\remote_token.txt`.
 5. Set the release key fingerprint, exactly as the installer says, so
    `update_monitor_server.bat` can install signed updates. If Boord runs on
@@ -97,6 +100,7 @@ watches, and the whole farm fits on one phone screen:
   | Ports | apps published correctly, e.g. 5/6 |
   | Uptime, Watchdog, Heartbeat, backup folders | how long since boot, the last run, or the newest backup |
   | Restarts | how many times the watchdog restarted an app in the last day |
+  | A device | *on* when online, otherwise how long since it was last seen |
 
 - **Disk** and **Memory** are bars: the fuller the bar, the fuller the disk
   or memory.
@@ -243,7 +247,54 @@ longer limit (`| 30`) instead of muting the alerts.
 > every worker's name, WhatsApp number and photograph. This check watches
 > whatever you set up. It doesn't make that choice safer.
 
-## 6. The off-site watcher
+## 6. Devices
+
+Every phone, tablet and computer on the farm's tailnet appears under
+**Devices**, without any setup:
+
+- **Green dot, *on*:** online now.
+- **Grey dot with a time (*2h*, *3d*):** offline, and how long ago it was
+  last seen.
+
+**Offline is not a problem**, so it never turns the banner amber and never
+sends an alert. Tablets are switched off at night and lose signal in the
+orchard, so an alert every evening would teach everyone to ignore the
+monitor. Glance at the grey dots instead. A tablet that should be picking
+and has been grey for an hour is worth a phone call.
+
+**The one warning is amber, for a device whose Tailscale key expires within
+two weeks.** When it lapses, that device drops off the tailnet and loses
+every app. To prevent it, open the Tailscale admin console, open the
+device's menu and choose **Disable key expiry**.
+
+**Boord's tablets show more.** If a device's Tailscale name is its Boord
+device id (`device-03`), its sheet also says:
+
+- its station and role in Boord;
+- when Boord last received a crate from it. This uses the farm PC's clock,
+  so a tablet with the wrong date can't make it look current.
+
+The tile shows Boord's ids short, as *Dev 03*. The monitor reads Boord's
+database only to look; it never changes it.
+
+**Choosing and naming the devices.** By default every device on the tailnet
+is shown under its Tailscale name. To show only some, in your own order and
+with your own names, create `data\devices.txt`:
+
+```
+# Tailscale name | name to show | Boord device id
+ipad-7f3a        | Field 1      | device-01
+ipad-91c2        | Field 2      | device-02
+galaxy-tab       | Bin tip      | device-06
+andre-iphone     | Andre
+```
+
+The Tailscale name is the machine's name in the Tailscale admin console.
+The other two columns are optional. Keep names short: a tile has room for
+about six letters. If a listed name is no longer on the tailnet (renamed,
+or removed), its tile turns amber and says so.
+
+## 7. The off-site watcher
 
 Run this on a machine that stays on, stays awake and is on the tailnet. The
 owner's Mac is the usual choice. It needs Python 3.9 or newer.
@@ -283,7 +334,7 @@ the farm about the owner's Mac being offline would be a false alarm.
 
 To change the farm address or token, run the script again.
 
-## 7. Updating
+## 8. Updating
 
 On the farm PC, double-click **`update_monitor_server.bat`**. As with
 Boord, it installs only releases signed with the release key, then
@@ -297,7 +348,7 @@ git checkout <newest tag>
 remote/install_remote.sh <same URL> <same token>
 ```
 
-## 8. Files
+## 9. Files
 
 | File | What it is |
 | --- | --- |
@@ -306,6 +357,7 @@ remote/install_remote.sh <same URL> <same token>
 | `data\subscriptions.json` | The phones that turned on alerts. |
 | `data\remote_token.txt` | Lets the off-site watcher copy the two files above. |
 | `data\drive_backups.txt` | The Google Drive backup folders to check (chapter 5). Not a credential. |
+| `data\devices.txt` | Which devices to show, and their names (chapter 6). Optional. |
 | `data\state.json` | What has been alerted, so a restart of the monitor doesn't re-send standing problems. |
 
 None of these is committed to git. If you lose `data\`, everything still
