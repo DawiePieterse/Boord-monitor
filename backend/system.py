@@ -170,6 +170,47 @@ class System:
         except OSError:
             return None
 
+    def newest_file(self, folder: str, max_files: int = 5000) -> Optional[tuple]:
+        """(path, modified time as naive UTC) of the newest file anywhere
+        under `folder`, or None if it holds no files. Raises OSError if the
+        folder itself can't be read. Capped, because a misconfigured line
+        pointing at the root of a drive must not make the check walk the
+        whole disk every minute."""
+        if not os.path.isdir(folder):
+            raise FileNotFoundError(folder)
+        best = None
+        seen = 0
+        for root, _dirs, files in os.walk(folder):
+            for name in files:
+                seen += 1
+                if seen > max_files:
+                    break
+                path = os.path.join(root, name)
+                try:
+                    mtime = os.path.getmtime(path)
+                except OSError:
+                    continue
+                if best is None or mtime > best[1]:
+                    best = (path, mtime)
+            if seen > max_files:
+                break
+        if best is None:
+            return None
+        return best[0], dt.datetime.utcfromtimestamp(best[1])
+
+    def process_running(self, image: str) -> Optional[bool]:
+        """Whether a process with this .exe name is running in any session,
+        or None where that can't be asked (not Windows). tasklist rather
+        than PowerShell: it starts in a fraction of the time, and only the
+        image name is looked for in its output, so the PC's display
+        language does not matter."""
+        if not IS_WINDOWS:
+            return None
+        rc, out, _err = self.run(["tasklist", "/FI", f"IMAGENAME eq {image}", "/NH", "/FO", "CSV"], 15)
+        if rc != 0:
+            return None
+        return image.lower() in out.lower()
+
     def is_windows(self) -> bool:
         return IS_WINDOWS
 

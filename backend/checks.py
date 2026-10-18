@@ -17,6 +17,7 @@ real but not urgent, and a phone that buzzes for them is a phone whose
 owner learns to ignore it before the night Boord actually goes down.
 """
 import datetime as dt
+import ntpath
 import os
 import re
 from typing import Dict, List, Optional
@@ -470,6 +471,98 @@ def watchdog_log_check(sys: System) -> dict:
                  "No restarts in the last 24 h.", tail, alert=False)
 
 
+# --- Google Drive backups ----------------------------------------------------
+
+DRIVE_EXE = "GoogleDriveFS.exe"
+
+
+def read_drive_folders() -> List[tuple]:
+    """[(folder, max days)] from data/drive_backups.txt; [] when it isn't
+    there. A malformed day count falls back to the default rather than
+    dropping the line - a folder silently left unwatched is the one failure
+    this file must not have."""
+    try:
+        with open(config.DRIVE_BACKUPS_FILE, encoding="utf-8-sig") as fh:
+            lines = fh.read().splitlines()
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        folder, _, days = line.partition("|")
+        try:
+            limit = float(days.strip()) if days.strip() else config.DRIVE_DEFAULT_DAYS
+        except ValueError:
+            limit = config.DRIVE_DEFAULT_DAYS
+        out.append((folder.strip().strip('"'), limit))
+    return out
+
+
+def drive_checks(sys: System) -> List[dict]:
+    """Two questions: is Google Drive for Desktop running to upload anything
+    at all, and has a fresh backup reached each folder it uploads?
+
+    Drive for Desktop is not a service. It runs only while someone is logged
+    in to Windows, so a PC that rebooted for an update at 03:00 and sat at the
+    login screen keeps writing backups that nothing uploads - every folder
+    check stays green while nothing leaves the farm. That is why the process
+    is checked on its own, and why it alerts.
+    """
+    folders = read_drive_folders()
+    if not folders:
+        return []
+    out = []
+    running = sys.process_running(DRIVE_EXE)
+    if running is None:
+        out.append(check("drive.app", "backups", "Google Drive", "unknown",
+                         "Whether Google Drive is running can only be checked on the farm PC."))
+    elif running:
+        out.append(check("drive.app", "backups", "Google Drive", "ok", "Running, so it can upload."))
+    else:
+        up = sys.uptime_s()
+        why = ("Not running, so nothing is being uploaded. It only runs while someone is logged in "
+               "to Windows: log in on the farm PC, and start Google Drive if it doesn't start itself.")
+        # Grace after a boot: whoever restarted the PC is usually about to
+        # log in, and paging them for the minutes in between teaches them
+        # to ignore this.
+        status = "warn" if up is not None and up < 30 * 60 else "fail"
+        out.append(check("drive.app", "backups", "Google Drive", status, why))
+
+    for i, (folder, limit) in enumerate(folders):
+        # ntpath, not os.path: these are Windows paths, and the tests (and
+        # anyone trying this on a Mac) run where os.path can't split them.
+        name = ntpath.basename(folder.rstrip("\\/")) or folder
+        cid = f"drive.folder.{i}"
+        try:
+            newest = sys.newest_file(folder)
+        except OSError:
+            hint = ""
+            drive = ntpath.splitdrive(folder)[0].upper()
+            if drive and drive != "C:":
+                hint = (f" If {drive} is Google Drive's own drive, the monitor can't see it: Drive "
+                        "mounts it only for the logged-in user, and the monitor runs as SYSTEM. "
+                        "Name the folder on C: that Drive uploads from instead.")
+            out.append(check(cid, "backups", name, "warn",
+                             f"Can't open {folder}.{hint}", alert=False))
+            continue
+        if newest is None:
+            out.append(check(cid, "backups", name, "warn", f"{folder} has no files in it yet."))
+            continue
+        path, when = newest
+        age = (sys.now() - when).total_seconds()
+        file_name = ntpath.basename(path)
+        if age > limit * 86400:
+            out.append(check(cid, "backups", name, "fail",
+                             f"The newest backup is {_ago(age)} old ({file_name}). A new one is "
+                             f"expected at least every {limit:g} days.", [folder]))
+        else:
+            out.append(check(cid, "backups", name, "ok",
+                             f"Newest backup {_ago(age)} ago: {file_name}.", [folder]))
+    return out
+
+
 # --- the whole picture, per role --------------------------------------------
 
 def farm_checks(sys: System) -> List[dict]:
@@ -498,6 +591,7 @@ def farm_checks(sys: System) -> List[dict]:
     out.append(_task_check(sys, tasks, apps.HEARTBEAT_TASK, "guards.heartbeat", "Heartbeat", 10,
                            "No email reaches anyone when this PC is off - run Boord's setup_heartbeat.bat."))
     out.append(watchdog_log_check(sys))
+    out.extend(drive_checks(sys))
     return out
 
 

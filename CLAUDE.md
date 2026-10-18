@@ -40,6 +40,11 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
   - remind every `REMIND_EVERY_S` while it stays broken;
   - one "back to normal" on recovery.
   - Streaks persist in `data/state.json`, so restarting the monitor does not re-alert.
+- **Google Drive backups** (`checks.drive_checks`, farm role, off unless `data/drive_backups.txt` lists folders):
+  - whether `GoogleDriveFS.exe` is running, because Drive for Desktop runs only while someone is logged in;
+  - the newest file's age in each folder.
+
+  Folders are Windows paths, so use `ntpath`, not `os.path`. A folder on Drive's `G:` mount is invisible to SYSTEM; the check explains that rather than reporting the backups missing.
 - **Up/down follows watchdog.ps1's rule:** any HTTP answer, even 500, means up. A 500 is a warning. `/api/version` is read for info only, never for up/down.
 - **Installed = scheduled task registered** (Windows). An app whose task is absent is `off`, not down, and is not expected in the serve table. Off Windows, `query_tasks` returns None and every app is checked.
 - **Scheduled tasks are read with `Get-ScheduledTaskInfo` → JSON,** not `schtasks /v`, whose labels follow the PC's display language.

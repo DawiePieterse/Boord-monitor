@@ -92,6 +92,14 @@ FARM_URL = os.environ.get("MONITOR_FARM_URL", "").rstrip("/")
 # on first start; it is copied once, by hand, to the remote machine.
 REMOTE_TOKEN_FILE = os.path.join(DATA_DIR, "remote_token.txt")
 
+# --- Google Drive backups (farm role) ----------------------------------------
+# One folder per line: a folder Google Drive for Desktop uploads, and the most
+# days its newest file may be old, after a "|". Lines starting with # are
+# ignored; no file means the check is off. Read on every run, so editing it
+# needs no restart. See MANUAL.md, "Google Drive backups".
+DRIVE_BACKUPS_FILE = os.path.join(DATA_DIR, "drive_backups.txt")
+DRIVE_DEFAULT_DAYS = 3
+
 # VAPID's "sub" claim: who to contact about this sender. Apple rejects a push
 # whose claim is not a mailto: or https: URL, so it has to look like one.
 VAPID_SUB = os.environ.get("MONITOR_VAPID_SUB", "mailto:boord-monitor@example.com")

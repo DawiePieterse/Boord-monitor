@@ -12,6 +12,7 @@ const GROUPS = {
     ["tailscale", "Tailscale"],
     ["pc", "Farm PC"],
     ["guards", "Safety nets"],
+    ["backups", "Google Drive backups"],
   ],
   remote: [
     ["farm", "The farm, seen from outside"],

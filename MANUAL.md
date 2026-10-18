@@ -14,6 +14,9 @@ phone alert when it isn't. It watches:
 - **The farm PC**: free disk space, memory, and when it last restarted.
 - **The safety nets**: whether Boord's watchdog and heartbeat tasks are set
   up and running, and what the watchdog restarted in the last day.
+- **Google Drive backups**, if you set them up (chapter 5): whether a fresh
+  backup has reached each folder Google Drive uploads, and whether Google
+  Drive is running to upload it.
 
 It runs in two places:
 
@@ -45,7 +48,7 @@ Install Boord first: the Restart button uses Boord's `watchdog.ps1`.
    ```
    It then answers at `https://<farm-pc>.<tailnet>.ts.net:8050/`.
 4. Write down the **remote token** that `install.bat` prints at the end. You
-   only need it for the off-site watcher (chapter 5). It is also in
+   only need it for the off-site watcher (chapter 6). It is also in
    `data\remote_token.txt`.
 5. Set the release key fingerprint, exactly as the installer says, so
    `update_monitor_server.bat` can install signed updates. If Boord runs on
@@ -102,6 +105,8 @@ screen with a note saying how old it is.
 | *Database migrations were not applied* | An update of Boord didn't finish. Run Boord's `update_server.bat` again. |
 | *Disk almost full* | Free space on the farm PC. SQLite can't write without room. |
 | *Watchdog / Heartbeat: Not set up* | Run Boord's `setup_watchdog.bat` / `setup_heartbeat.bat`. |
+| *Google Drive: Not running* | Nothing is being uploaded. Log in on the farm PC and start Google Drive if it doesn't start itself. |
+| *The newest backup is N days old* | Backups have stopped reaching that folder. Check the app's own backup card, then the folder. |
 
 ## 3. Alerts on your phone
 
@@ -158,7 +163,62 @@ as an automatic one:
 The watchdog's own words appear in the restart window and in
 `data\watchdog.log`.
 
-## 5. The off-site watcher
+## 5. Google Drive backups
+
+If Google Drive for Desktop uploads backups from the farm PC, the monitor
+can check that it is still happening. It checks two things:
+
+- **That Google Drive is running.** Google Drive for Desktop is not a
+  service. It runs only while someone is logged in to Windows. If the PC
+  restarts for an update at night and sits at the login screen, the apps
+  come back and keep making backups, but nothing uploads them. If Drive is
+  not running half an hour after the PC started, you get an alert.
+- **That each folder has a fresh backup.** The newest file anywhere in the
+  folder, including its subfolders, must be newer than a limit you set.
+  An older one sends an alert.
+
+Turn it on by creating `data\drive_backups.txt` in the monitor's folder,
+with one folder per line. Optionally add `|` and the most days the newest
+backup may be old. The default is 3.
+
+```
+# Folders Google Drive uploads. See MANUAL.md chapter 5.
+C:\Users\Andre\My Drive\Farm backups\Boord
+C:\Users\Andre\My Drive\Farm backups\Kudde | 7
+```
+
+The file is read on every check, so changes need no restart. Each folder
+appears on the dashboard under **Google Drive backups**, named after its
+last part.
+
+**Name the folder on C:, not on Google Drive's G: drive.** The monitor runs
+as SYSTEM. Google Drive mounts its G: drive only for the person logged in,
+so SYSTEM cannot see it. Use the real folder on C: that Drive uploads:
+
+- **Mirror files:** with Drive set to *Mirror files*, that is under
+  `C:\Users\<you>\My Drive`.
+- **Folders from your computer:** if Drive backs up a folder from your
+  computer, use that folder itself.
+
+A folder the monitor can't open shows amber with this explanation. It never
+sends an alert.
+
+**What this proves and what it doesn't.** A green folder means a new
+backup arrived where Drive picks it up, and Drive was running. It can't see
+inside Drive, so it can't prove the upload finished. If Drive is signed
+out, out of storage or stuck, check the Drive icon by the clock. Open
+drive.google.com now and then to see the files are really there.
+
+**Quiet seasons.** Boord skips the nightly backup when nothing changed, so
+out of season a week-old newest backup can be normal. Give that folder a
+longer limit (`| 30`) instead of muting the alerts.
+
+> Boord's manual (chapter 11) warns against copying its backups to a
+> personal cloud account. The archives are not encrypted, and they hold
+> every worker's name, WhatsApp number and photograph. This check watches
+> whatever you set up. It doesn't make that choice safer.
+
+## 6. The off-site watcher
 
 Run this on a machine that stays on, stays awake and is on the tailnet. The
 owner's Mac is the usual choice. It needs Python 3.9 or newer.
@@ -198,7 +258,7 @@ the farm about the owner's Mac being offline would be a false alarm.
 
 To change the farm address or token, run the script again.
 
-## 6. Updating
+## 7. Updating
 
 On the farm PC, double-click **`update_monitor_server.bat`**. As with
 Boord, it installs only releases signed with the release key, then
@@ -212,7 +272,7 @@ git checkout <newest tag>
 remote/install_remote.sh <same URL> <same token>
 ```
 
-## 7. Files
+## 8. Files
 
 | File | What it is |
 | --- | --- |
@@ -220,6 +280,7 @@ remote/install_remote.sh <same URL> <same token>
 | `data\vapid_private.pem` | The key that signs alerts. Anyone holding it can send notifications to your phones. |
 | `data\subscriptions.json` | The phones that turned on alerts. |
 | `data\remote_token.txt` | Lets the off-site watcher copy the two files above. |
+| `data\drive_backups.txt` | The Google Drive backup folders to check (chapter 5). Not a credential. |
 | `data\state.json` | What has been alerted, so a restart of the monitor doesn't re-send standing problems. |
 
 None of these is committed to git. If you lose `data\`, everything still

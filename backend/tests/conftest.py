@@ -71,6 +71,8 @@ class FakeSystem:
         self.disk_free = 120 * 1024 ** 3
         self.uptime = 3 * 86400
         self.log_text = None
+        self.drive_running = True
+        self.folders = {}  # folder -> newest file's (path, mtime) or None; absent = can't open
         self.versions = {8000: {"version": "3.15", "tag": "v3.15", "migrations_applied": True,
                                 "backups": {"last": "2026-10-18 02:00", "count": 14}, "update": None},
                          8040: {"tag": "v1.0.2"}, 8050: {"tag": "v1.0.0"}}
@@ -134,6 +136,14 @@ class FakeSystem:
 
     def read_tail(self, path, max_bytes=65536):
         return self.log_text
+
+    def newest_file(self, folder, max_files=5000):
+        if folder not in self.folders:
+            raise FileNotFoundError(folder)
+        return self.folders[folder]
+
+    def process_running(self, image):
+        return self.drive_running if self.windows else None
 
 
 @pytest.fixture
