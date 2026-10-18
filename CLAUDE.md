@@ -32,7 +32,8 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
   - **`remote`** runs on an always-on tailnet machine (`remote/install_remote.sh`, launchd on a Mac). Its only alerting check is `farm.monitor`: the farm PC is unreachable. Its own Tailscale problems never push.
 - **Checks are pure functions over a `System`** (`system.py`). `checks.py` never touches subprocess, httpx, ssl or ctypes directly. The tests' `FakeSystem` (`tests/conftest.py`) plays a whole farm PC, so add new machine access to `System` and the fake together.
 - **Check result shape:**
-  - Every check is `{id, group, label, status, summary, detail, alert, ...}`.
+  - Every check is `{id, group, label, short, status, summary, detail, alert, ...}`.
+  - Groups, in screen order and with titles, are `checks.GROUPS`, sent with every status.
   - `status` is `ok|warn|fail|off|unknown`.
   - **Only `fail` with `alert` true ever pushes. Warnings never do.** That is deliberate: a phone that buzzes for warnings gets muted.
 - **Alert rules live in `monitor.evaluate`:**
@@ -68,7 +69,7 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
 - **The app table** (`apps.py`) is also in Boord's `watchdog.ps1` and `heartbeat.ps1`, and the serve ports are in Boord's MANUAL.md. Change all of them together.
 - **Frontend changes need two bumps:** `VERSION` in `frontend/api.js` and `CACHE` in `frontend/service-worker.js`.
 - **Plain JS and CSS, no build step, no CDNs.** The phones are tailnet-only.
-- **The dashboard is one phone screen** (390 x 844). Each check is a tile showing its dot, a short name (`SHORT` in `app.js`) and `value`, an optional field of at most about six characters. A check with `pct` is drawn as a bar. The full sentence and detail open in a sheet. The smoke test fails if the phone layout needs scrolling.
+- **The dashboard is one phone screen** (390 x 844). Each check is a tile showing its dot, a short name (`short`, from `SHORT` in `checks.py`) and `value`, an optional field of at most about six characters. A check with `pct` is drawn as a bar. The full sentence and detail open in a sheet. The smoke test fails if the phone layout needs scrolling.
 - **Every push must show a notification** (`service-worker.js`). iOS revokes push for a site that receives a push silently.
 - **Copied from Boord Labour:** `install.ps1`, `update_monitor_server.bat` and `scripts/release.sh`. Keep fixes flowing between the copies. The updater's import list must equal `requirements.txt` (a test checks this).
 

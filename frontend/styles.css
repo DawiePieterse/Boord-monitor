@@ -1,41 +1,63 @@
 /* Plain CSS, no build step. Boord's Tailwind runtime would be 400 KB to style
-   one screen. Colours follow the sibling apps' navy.
+   one screen.
+
+   The look is iOS's own: grouped inset cards on a grey page, a large title,
+   bottom sheets, system colours. Most people opening this hold an iPhone,
+   and a screen that behaves like the rest of their phone needs no learning
+   - which matters when it is opened once a fortnight, in a hurry.
 
    Everything is sized so the whole farm fits one phone screen (390 x 844,
    an iPhone 14) without scrolling: the colours are the answer, and the
    words are one tap away in the sheet. */
 :root {
-  --bg: #f3f5f9;
+  --bg: #f2f2f7;
   --card: #ffffff;
-  --ink: #142033;
-  --muted: #5b6678;
-  --line: #e2e6ee;
-  --brand: #0A2F6B;
-  --ok: #1f8a4c;
-  --ok-bg: #e9f6ef;
-  --warn: #b26a00;
-  --warn-bg: #fff3dc;
-  --fail: #c62828;
-  --fail-bg: #fde8e8;
-  --off: #9aa3b2;
-  --log-bg: #f0f2f6;
+  --fill: #f2f2f7;
+  --ink: #000000;
+  --muted: #6e6e73;
+  --line: rgba(60, 60, 67, .18);
+  --tint: #007aff;
+  --ok: #34c759;
+  --warn: #ff9500;
+  --fail: #ff3b30;
+  --off: #8e8e93;
+  /* Text on a tinted tile: the bright system colours are too pale for words
+     on white, so text uses the darker accessible variants. */
+  --ok-ink: #248a3d;
+  --warn-ink: #c93400;
+  --fail-ink: #d70015;
+  --ok-bg: rgba(52, 199, 89, .14);
+  --warn-bg: rgba(255, 149, 0, .16);
+  --fail-bg: rgba(255, 59, 48, .14);
+  --log-bg: #f2f2f7;
+  --bar-bg: rgba(242, 242, 247, .78);
+  --menu-bg: rgba(249, 249, 249, .86);
+  --shadow: 0 10px 40px rgba(0, 0, 0, .16);
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0d1420;
-    --card: #162032;
-    --ink: #e6ebf3;
-    --muted: #97a2b5;
-    --line: #26324a;
-    --ok: #4cc27f;
-    --ok-bg: #13281d;
-    --warn: #f0a83a;
-    --warn-bg: #33270f;
-    --fail: #ff6b6b;
-    --fail-bg: #3a1818;
-    --off: #5d6779;
-    --log-bg: #0f1726;
+    --bg: #000000;
+    --card: #1c1c1e;
+    --fill: #2c2c2e;
+    --ink: #ffffff;
+    --muted: #98989d;
+    --line: rgba(84, 84, 88, .6);
+    --tint: #0a84ff;
+    --ok: #30d158;
+    --warn: #ff9f0a;
+    --fail: #ff453a;
+    --off: #636366;
+    --ok-ink: #30d158;
+    --warn-ink: #ff9f0a;
+    --fail-ink: #ff6961;
+    --ok-bg: rgba(48, 209, 88, .16);
+    --warn-bg: rgba(255, 159, 10, .18);
+    --fail-bg: rgba(255, 69, 58, .2);
+    --log-bg: #2c2c2e;
+    --bar-bg: rgba(0, 0, 0, .72);
+    --menu-bg: rgba(37, 37, 37, .9);
+    --shadow: 0 10px 40px rgba(0, 0, 0, .6);
   }
 }
 
@@ -46,140 +68,222 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.35 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
   padding-bottom: env(safe-area-inset-bottom);
 }
+button { font: inherit; color: inherit; }
 
-/* --- header ---------------------------------------------------------------- */
-.top {
-  display: flex; align-items: center; justify-content: space-between;
-  padding: calc(6px + env(safe-area-inset-top)) 12px 6px 16px;
-  background: var(--brand); color: #fff;
+/* --- navigation bar ------------------------------------------------------------ */
+.nav {
+  position: sticky; top: 0; z-index: 10;
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;
+  max-width: 760px; margin: 0 auto;
+  padding: calc(8px + env(safe-area-inset-top)) 12px 4px 16px;
+  background: var(--bar-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
 }
-.brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.brand-name { font-weight: 700; font-size: 18px; }
-.chip { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(255, 255, 255, .18); white-space: nowrap; }
-.top-actions { display: flex; gap: 2px; }
+.nav-titles { display: flex; flex-direction: column; min-width: 0; }
+.nav-title { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
+.nav-sub { font-size: 13px; color: var(--muted); }
+.nav-actions { display: flex; gap: 4px; padding-bottom: 2px; }
 .icon-btn {
-  position: relative; width: 40px; height: 40px; border: 0; border-radius: 10px;
-  background: none; color: #fff; display: grid; place-items: center; cursor: pointer;
+  position: relative; width: 38px; height: 38px; border: 0; border-radius: 50%;
+  background: var(--card); color: var(--tint); display: grid; place-items: center; cursor: pointer;
 }
-.icon-btn:active { background: rgba(255, 255, 255, .15); }
-.icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn:active { opacity: .5; }
+.icon-btn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn svg .fill { fill: currentColor; stroke: none; }
 .icon-btn.spinning svg { animation: spin .9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.badge { position: absolute; top: 8px; right: 8px; width: 8px; height: 8px; border-radius: 50%; background: #4cc27f; box-shadow: 0 0 0 2px var(--brand); }
+.badge { position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 2px var(--card); }
 
-main { max-width: 720px; margin: 0 auto; padding: 10px 12px 12px; }
-
-/* --- banner ------------------------------------------------------------------ */
-/* The banner keeps its light-mode colours in dark mode on purpose: white
-   text on dark mode's paler red is hard to read in sunlight. */
-.banner { border-radius: 14px; padding: 10px 14px; margin-bottom: 10px; color: #fff; }
-.banner-ok { background: #1f8a4c; }
-.banner-warn { background: #b26a00; }
-.banner-fail { background: #c62828; }
-.banner-unknown { background: var(--off); }
-.banner-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
-.banner-title { font-size: 22px; font-weight: 800; line-height: 1.15; }
-.banner-time { font-size: 13px; opacity: .9; white-space: nowrap; }
-.banner-problems:empty { display: none; }
-.banner-problems { margin-top: 6px; display: grid; gap: 2px; }
-.problem {
-  all: unset; display: block; cursor: pointer; font-size: 13px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* The pull-down menu, as iOS draws one: frosted, rounded, rows with the
+   label left and its symbol right. */
+.menu {
+  position: absolute; top: calc(100% + 4px); right: 12px; width: 260px; z-index: 20;
+  border-radius: 14px; overflow: hidden; box-shadow: var(--shadow);
+  background: var(--menu-bg);
+  -webkit-backdrop-filter: saturate(180%) blur(30px); backdrop-filter: saturate(180%) blur(30px);
+  transform-origin: top right; animation: pop .16s ease-out;
 }
-.problem::before { content: "● "; opacity: .8; }
+@keyframes pop { from { opacity: 0; transform: scale(.92); } }
+.menu-item {
+  all: unset; box-sizing: border-box; width: 100%; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 11px 16px; font-size: 16px; border-bottom: .5px solid var(--line);
+}
+.menu-item:active, .menu-item:focus-visible { background: var(--line); }
+.menu-item svg { flex: none; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.menu-detail { color: var(--muted); }
+.menu-foot { padding: 8px 16px 10px; font-size: 12px; color: var(--muted); border-top: 6px solid var(--line); }
 
-.notice { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 6px 10px; margin-bottom: 10px; font-size: 13px; font-weight: 600; }
+main { max-width: 760px; margin: 0 auto; padding: 6px 16px 12px; }
+
+/* --- the status card ---------------------------------------------------------- */
+/* The answer to "is the farm all right?": a coloured symbol and one line,
+   on a card tinted the same colour so it reads from arm's length. */
+.banner { border-radius: 16px; padding: 12px 14px; margin-bottom: 12px; background: var(--card); }
+.banner-ok { background: color-mix(in srgb, var(--ok) 14%, var(--card)); }
+.banner-warn { background: color-mix(in srgb, var(--warn) 16%, var(--card)); }
+.banner-fail { background: color-mix(in srgb, var(--fail) 15%, var(--card)); }
+.banner-row { display: flex; align-items: center; gap: 12px; }
+.banner-icon {
+  flex: none; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--off); color: #fff; font-size: 20px; font-weight: 700; line-height: 1;
+}
+.banner-icon::before { content: "…"; }
+.banner-ok .banner-icon { background: var(--ok); }
+.banner-ok .banner-icon::before { content: "✓"; }
+.banner-warn .banner-icon { background: var(--warn); }
+.banner-warn .banner-icon::before { content: "!"; }
+.banner-fail .banner-icon { background: var(--fail); }
+.banner-fail .banner-icon::before { content: "✕"; font-size: 17px; }
+.banner-text { display: flex; flex-direction: column; min-width: 0; }
+.banner-title { font-size: 20px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
+.banner-time { font-size: 13px; color: var(--muted); }
+.banner-problems:empty { display: none; }
+.banner-problems { margin: 10px -14px -12px; border-top: .5px solid var(--line); }
+/* Each problem is a list row: name, the sentence cut to fit, a chevron. */
+.problem {
+  all: unset; box-sizing: border-box; width: 100%; cursor: pointer;
+  display: flex; align-items: center; gap: 6px; padding: 8px 14px; font-size: 14px;
+  border-bottom: .5px solid var(--line);
+}
+.problem:last-child { border-bottom: 0; }
+.problem:active { background: var(--line); }
+.problem b { flex: none; color: var(--fail-ink); }
+.problem-text { min-width: 0; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.problem::after { content: "›"; flex: none; color: var(--muted); font-size: 20px; line-height: 1; }
+
+.notice { background: var(--warn-bg); color: var(--warn-ink); border-radius: 12px; padding: 8px 12px; margin-bottom: 12px; font-size: 13px; font-weight: 600; }
 
 /* --- groups of tiles ------------------------------------------------------------ */
-.groups { display: grid; gap: 7px; }
+.groups { display: grid; gap: 10px; }
 /* On a wide screen two groups sit side by side; on a phone, one per row. */
-@media (min-width: 640px) { .groups { grid-template-columns: 1fr 1fr; } }
+@media (min-width: 640px) { .groups { grid-template-columns: 1fr 1fr; gap: 14px; } }
 
-.card { background: var(--card); border-radius: 12px; padding: 6px 8px 8px; border: 1px solid var(--line); }
-.card-fail { border-color: color-mix(in srgb, var(--fail) 45%, var(--line)); }
-.card-warn { border-color: color-mix(in srgb, var(--warn) 40%, var(--line)); }
+.card { background: var(--card); border-radius: 14px; padding: 8px; }
+/* iOS section header: small, grey, outside the card's content. */
 .card h2 {
-  display: flex; align-items: baseline; gap: 6px; margin: 0 2px 5px;
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  display: flex; align-items: baseline; gap: 6px; margin: 0 4px 6px;
+  font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; color: var(--muted);
 }
-.card h2 .meta { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.card-fail h2 { color: var(--fail-ink); }
+.card-warn h2 { color: var(--warn-ink); }
+.card h2 .meta { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--muted); }
 
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 5px; }
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); gap: 6px; }
 .tile {
-  font: inherit; color: inherit; border: 0; cursor: pointer;
+  border: 0; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  min-height: 54px; padding: 5px 2px; border-radius: 9px; background: var(--bg); min-width: 0;
+  min-height: 54px; padding: 5px 2px; border-radius: 11px; background: var(--fill); min-width: 0;
+  transition: transform .1s;
 }
-.tile:active { filter: brightness(.95); }
-.tiles-small { grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 4px; }
-.tiles-small .tile { min-height: 42px; padding: 3px 1px; }
-.tiles-small .dot { width: 10px; height: 10px; }
+.tile:active { transform: scale(.95); }
+.tiles-small { grid-template-columns: repeat(auto-fill, minmax(50px, 1fr)); gap: 5px; }
+.tiles-small .tile { min-height: 44px; padding: 3px 1px; }
+.tiles-small .dot { width: 9px; height: 9px; }
 .tiles-small .tile-name { font-size: 11px; }
 .tiles-small .tile-value { font-size: 10px; }
 .tile-warn { background: var(--warn-bg); }
 .tile-fail { background: var(--fail-bg); }
-.tile-off, .tile-unknown { opacity: .6; }
-.tile-name { font-size: 12px; font-weight: 650; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile-off, .tile-unknown { opacity: .55; }
+.tile-name { font-size: 12px; font-weight: 600; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile-value { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.tile-fail .tile-value { color: var(--fail); font-weight: 700; }
-.tile-warn .tile-value { color: var(--warn); font-weight: 700; }
+.tile-fail .tile-value { color: var(--fail-ink); font-weight: 700; }
+.tile-warn .tile-value { color: var(--warn-ink); font-weight: 700; }
 
 /* A meter takes two columns, so the bar has room to be read. */
-.tile-meter { grid-column: span 2; align-items: stretch; padding: 6px 8px; }
+.tile-meter { grid-column: span 2; align-items: stretch; padding: 6px 10px; }
 .tile-top { display: flex; align-items: center; gap: 5px; }
 .tile-meter .tile-value { text-align: left; }
-.bar { display: block; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 2px 0; }
-.bar-fill { display: block; height: 100%; background: var(--ok); }
+.bar { display: block; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; margin: 3px 0 2px; }
+.bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--ok); }
 .bar-warn { background: var(--warn); }
 .bar-fail { background: var(--fail); }
 
-.dot { flex: none; width: 12px; height: 12px; border-radius: 50%; background: var(--off); }
+.dot { flex: none; width: 11px; height: 11px; border-radius: 50%; background: var(--off); }
 .dot-ok { background: var(--ok); }
 .dot-warn { background: var(--warn); }
 .dot-fail { background: var(--fail); box-shadow: 0 0 0 3px color-mix(in srgb, var(--fail) 25%, transparent); }
 .tile-meter .dot { width: 9px; height: 9px; box-shadow: none; }
 
-.foot { text-align: center; font-size: 12px; padding: 10px 0 0; }
+/* --- the bottom sheet ------------------------------------------------------------ */
+dialog { border: 0; padding: 0; background: var(--card); color: var(--ink); }
+dialog::backdrop { background: rgba(0, 0, 0, .4); }
+dialog h2 { margin: 0 0 6px; font-size: 20px; font-weight: 700; letter-spacing: -.01em; }
 
-/* --- the sheet and dialogs ------------------------------------------------------- */
-dialog {
-  border: 0; border-radius: 16px; padding: 16px; width: min(460px, calc(100vw - 24px));
-  max-height: calc(100vh - 48px); overflow: auto; background: var(--card); color: var(--ink);
+/* On a phone the sheet rises from the bottom edge, as iOS's do: reachable
+   with the thumb that tapped the tile. */
+.sheet {
+  width: 100%; max-width: 560px; margin: auto auto 0; border-radius: 14px 14px 0 0;
+  max-height: 88vh; overflow: auto; padding: 0 16px calc(20px + env(safe-area-inset-bottom));
+  animation: rise .22s ease-out;
 }
-dialog::backdrop { background: rgba(0, 0, 0, .45); }
-dialog h2 { margin: 0 0 6px; font-size: 18px; }
+@keyframes rise { from { transform: translateY(40px); opacity: .4; } }
+@media (min-width: 640px) {
+  .sheet { margin: auto; border-radius: 16px; max-height: calc(100vh - 64px); padding-bottom: 20px; }
+}
+.sheet-head {
+  position: sticky; top: 0; z-index: 1; display: flex; justify-content: flex-end;
+  padding: 8px 0 4px; margin: 0 -16px 4px; padding-right: 8px; background: var(--card);
+}
+.grabber { position: absolute; left: 50%; top: 6px; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: var(--line); }
+.text-btn { border: 0; background: none; color: var(--tint); font-size: 17px; padding: 8px 10px; cursor: pointer; }
+.text-btn:active { opacity: .4; }
+.sheet-head .text-btn { font-weight: 600; }
+
 .sheet-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.sheet-title .chip { color: #fff; font-size: 12px; font-weight: 600; }
+.chip { font-size: 12px; font-weight: 600; padding: 2px 9px; border-radius: 999px; color: #fff; white-space: nowrap; }
 .chip-ok { background: var(--ok); }
 .chip-warn { background: var(--warn); }
 .chip-fail { background: var(--fail); }
 .chip-off, .chip-unknown { background: var(--off); }
-.sheet-summary { margin: 4px 0 8px; overflow-wrap: anywhere; }
-dialog input { width: 100%; font: inherit; font-size: 22px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); letter-spacing: .2em; }
+.sheet-summary { margin: 6px 0 10px; font-size: 16px; overflow-wrap: anywhere; }
 
 .log {
-  background: var(--log-bg); border-radius: 8px; padding: 8px 10px; margin: 8px 0 0;
-  font: 12px/1.45 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--log-bg); border-radius: 12px; padding: 10px 12px; margin: 10px 0 0;
+  font: 12px/1.45 ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere;
   max-height: 300px; overflow: auto;
 }
 
-.events { list-style: none; margin: 0; padding: 0; }
-.events li { padding: 6px 0; border-top: 1px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; font-size: 14px; }
+/* Recent changes: an inset grouped list. */
+.events { list-style: none; margin: 8px 0 0; padding: 0 12px; background: var(--fill); border-radius: 12px; }
+.events li { padding: 9px 0; border-top: .5px solid var(--line); display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; font-size: 14px; }
 .events li:first-child { border-top: 0; }
 .events .dot { width: 9px; height: 9px; align-self: center; box-shadow: none; }
 
+/* --- buttons ------------------------------------------------------------------------ */
 .btn {
-  font: inherit; font-weight: 600; border-radius: 999px; padding: 10px 18px; cursor: pointer; text-decoration: none;
-  display: inline-block; background: var(--brand); color: #fff; border: 1px solid var(--brand);
+  font-size: 17px; font-weight: 600; border-radius: 12px; padding: 12px 18px; cursor: pointer; text-decoration: none;
+  display: inline-flex; justify-content: center; flex: 1 1 auto; border: 0;
+  background: var(--tint); color: #fff;
 }
-.btn-quiet { background: var(--card); color: var(--ink); border-color: var(--line); }
-.btn-danger { background: var(--fail); border-color: var(--fail); }
-button:disabled { opacity: .55; cursor: default; }
-.row-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.btn:active { opacity: .7; }
+.btn-quiet { background: var(--fill); color: var(--tint); }
+.btn-danger { background: var(--fail); color: #fff; }
+button:disabled { opacity: .45; cursor: default; }
+.row-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+
+/* --- alerts (PIN, restart): the centred iOS alert ------------------------------------ */
+.alert-dialog {
+  width: min(300px, calc(100vw - 48px)); border-radius: 14px; padding: 18px 16px 0; text-align: center;
+  max-height: calc(100vh - 48px); overflow: auto;
+}
+.alert-dialog h2 { font-size: 17px; font-weight: 600; }
+.alert-dialog input {
+  width: 100%; font: inherit; font-size: 22px; text-align: center; letter-spacing: .3em;
+  padding: 8px 10px; margin-top: 4px; border-radius: 8px; border: .5px solid var(--line); background: var(--fill); color: var(--ink);
+}
+.alert-dialog .log { text-align: left; }
+.alert-actions { display: flex; margin: 16px -16px 0; border-top: .5px solid var(--line); }
+.alert-actions .text-btn { flex: 1; padding: 11px 8px; border-radius: 0; }
+.alert-actions .text-btn + .text-btn { border-left: .5px solid var(--line); }
+.text-btn-strong { font-weight: 600; }
+.text-btn-danger { color: var(--fail); font-weight: 600; }
 
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
-.error { color: var(--fail); font-weight: 600; }
+.error { color: var(--fail-ink); font-weight: 600; }

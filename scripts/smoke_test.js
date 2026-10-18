@@ -40,6 +40,13 @@ const SHOT_DIR = process.env.SHOT_DIR || os.tmpdir();
     const sheet = await page.locator("#sheet[open] .sheet-summary").textContent();
     if (!sheet) { console.error(`${name}: tapping a tile opened no detail`); failed = true; }
     await page.locator("#sheet-close").click();
+    // The "..." menu opens, and Recent changes from it opens the sheet.
+    await page.locator("#menu-btn").click();
+    if (!(await page.locator("#menu").isVisible())) { console.error(`${name}: the menu did not open`); failed = true; }
+    await page.locator("#history-btn").click();
+    if (await page.locator("#menu").isVisible()) { console.error(`${name}: the menu stayed open`); failed = true; }
+    await page.locator("#sheet[open] .sheet-title").waitFor();
+    await page.locator("#sheet-close").click();
     if (overflow) { console.error(`${name}: page scrolls sideways`); failed = true; }
     if (errors.length) { console.error(`${name}: page errors:\n  ${errors.join("\n  ")}`); failed = true; }
     await page.close();

@@ -173,6 +173,12 @@ class System:
             return None
 
     def newest_file(self, folder: str, max_files: int = 5000) -> Optional[tuple]:
+        # Backups land daily and the limit is counted in days, so a scan ten
+        # minutes old loses nothing - and spares the PC's disk walking every
+        # folder every minute.
+        return _cached(("newest_file", folder), NEWEST_FILE_TTL_S, lambda: self._newest_file(folder, max_files))
+
+    def _newest_file(self, folder: str, max_files: int) -> Optional[tuple]:
         """(path, modified time as naive UTC) of the newest file anywhere
         under `folder`, or None if it holds no files. Raises OSError if the
         folder itself can't be read. Capped, because a misconfigured line
@@ -180,22 +186,31 @@ class System:
         whole disk every minute."""
         if not os.path.isdir(folder):
             raise FileNotFoundError(folder)
+        # scandir rather than os.walk + getmtime: on Windows each entry
+        # already carries its modified time, so no second disk call per file.
         best = None
         seen = 0
-        for root, _dirs, files in os.walk(folder):
-            for name in files:
-                seen += 1
-                if seen > max_files:
-                    break
-                path = os.path.join(root, name)
+        stack = [folder]
+        while stack and seen < max_files:
+            try:
+                entries = list(os.scandir(stack.pop()))
+            except OSError:
+                continue
+            for entry in entries:
                 try:
-                    mtime = os.path.getmtime(path)
+                    if entry.is_dir(follow_symlinks=False):
+                        stack.append(entry.path)
+                        continue
+                    if not entry.is_file():
+                        continue
+                    mtime = entry.stat().st_mtime
                 except OSError:
                     continue
+                seen += 1
                 if best is None or mtime > best[1]:
-                    best = (path, mtime)
-            if seen > max_files:
-                break
+                    best = (entry.path, mtime)
+                if seen >= max_files:
+                    break
         if best is None:
             return None
         return best[0], dt.datetime.utcfromtimestamp(best[1])
@@ -214,7 +229,13 @@ class System:
         return image.lower() in out.lower()
 
     def boord_devices(self, db_path: str) -> Optional[Dict[str, dict]]:
-        """{Boord device id: {station, role, active, last_seen, last_sync}}
+        # Detail for the device tiles only, never an alert: a few minutes old
+        # is fine, and it keeps the GROUP BY off the pack house's database
+        # most minutes.
+        return _cached(("boord_devices", db_path), BOORD_DEVICES_TTL_S, lambda: self._boord_devices(db_path))
+
+    def _boord_devices(self, db_path: str) -> Optional[Dict[str, dict]]:
+        """{Boord device id: {station, role, last_seen, last_sync}}
         from Boord's database, or None if it can't be read.
 
         Opened read-only (mode=ro), as Boord Labour opens it: the monitor
@@ -229,7 +250,7 @@ class System:
         try:
             con = sqlite3.connect(uri, uri=True, timeout=5)
             try:
-                rows = con.execute("SELECT id, station, role, active, last_seen FROM device").fetchall()
+                rows = con.execute("SELECT id, station, role, last_seen FROM device").fetchall()
                 synced = dict(con.execute(
                     "SELECT device_id, MAX(synced_at) FROM harvestrecord "
                     "WHERE device_id IS NOT NULL GROUP BY device_id").fetchall())
@@ -240,11 +261,29 @@ class System:
             # file locked mid-migration: no Boord detail this minute, but the
             # devices' Tailscale status still shows.
             return None
-        return {r[0]: {"station": r[1] or "", "role": r[2] or "", "active": bool(r[3]),
-                       "last_seen": r[4], "last_sync": synced.get(r[0])} for r in rows}
+        return {r[0]: {"station": r[1] or "", "role": r[2] or "",
+                       "last_seen": r[3], "last_sync": synced.get(r[0])} for r in rows}
 
     def is_windows(self) -> bool:
         return IS_WINDOWS
+
+
+# Results that may be reused for a while, shared by every System: main.py
+# makes a new one per request. {key: (monotonic time, value)}. Exceptions
+# are not cached, so a folder that couldn't be opened is tried again next
+# minute.
+NEWEST_FILE_TTL_S = 10 * 60
+BOORD_DEVICES_TTL_S = 5 * 60
+_cache: Dict[tuple, tuple] = {}
+
+
+def _cached(key: tuple, ttl: float, compute):
+    hit = _cache.get(key)
+    if hit is not None and time.monotonic() - hit[0] < ttl:
+        return hit[1]
+    value = compute()
+    _cache[key] = (time.monotonic(), value)
+    return value
 
 
 def parse_json(text: str) -> object:

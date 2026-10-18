@@ -5,6 +5,7 @@ import sqlite3
 
 import checks
 import config
+import system
 from tests.conftest import NOW, peer, ts_status
 
 
@@ -34,6 +35,7 @@ def test_every_peer_shown_without_a_list(fake):
     off = d["dev.device-02"]
     assert off["status"] == "off" and off["word"] == "Offline"
     assert off["value"] == "3h"
+    assert off["short"] == "Dev 02"
     assert "last seen 3 h ago" in off["summary"]
     assert all(c["alert"] is False for c in d.values())
 
@@ -64,7 +66,7 @@ def test_list_names_and_orders_devices_and_reports_missing_ones(fake):
 
 def test_boord_last_crate(fake):
     fake.ts = ts_status(peers=[peer("device-03")])
-    fake.boord = {"device-03": {"station": "Block 7", "role": "field", "active": True,
+    fake.boord = {"device-03": {"station": "Block 7", "role": "field",
                                 "last_seen": "2026-10-18 06:30:00",
                                 "last_sync": "2026-10-18 07:20:00"}}
     c = devices(fake)["dev.device-03"]
@@ -94,5 +96,8 @@ def test_real_boord_database_read_only(tmp_path):
     con.execute("DROP TABLE harvestrecord")
     con.commit()
     con.close()
+    # Still the cached answer for a few minutes; then the real one.
+    assert System().boord_devices(str(db)) == got
+    system._cache.clear()
     assert System().boord_devices(str(db)) is None
     assert System().boord_devices(str(tmp_path / "missing.db")) is None

@@ -3,9 +3,10 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#0A2F6B">
+  <meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta name="apple-mobile-web-app-title" content="Monitor">
   <title>Boord Monitor</title>
   <link rel="manifest" href="manifest.json">
@@ -13,30 +14,49 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="top">
-    <div class="brand">
-      <span class="brand-name">Monitor</span>
-      <span id="role" class="chip"></span>
+  <!-- An iOS-style navigation bar: a large title, one button for the thing
+       people do most (check now), and everything else in one pull-down
+       menu behind "..." - so the screen itself is only the farm. -->
+  <header class="nav">
+    <div class="nav-titles">
+      <h1 class="nav-title">Monitor</h1>
+      <span id="role" class="nav-sub"></span>
     </div>
-    <div class="top-actions">
-      <button id="history-btn" class="icon-btn" type="button" aria-label="Recent changes">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-      </button>
-      <button id="alerts-btn" class="icon-btn" type="button" aria-label="Alerts on this phone">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
-        <span id="alerts-dot" class="badge" hidden></span>
-      </button>
+    <div class="nav-actions">
       <button id="check-now" class="icon-btn" type="button" aria-label="Check now">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.7"/><path d="M20 4v5h-5"/></svg>
       </button>
+      <button id="menu-btn" class="icon-btn" type="button" aria-label="Menu" aria-haspopup="menu" aria-expanded="false" aria-controls="menu">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><circle class="fill" cx="7.5" cy="12" r="1.3"/><circle class="fill" cx="12" cy="12" r="1.3"/><circle class="fill" cx="16.5" cy="12" r="1.3"/></svg>
+        <span id="alerts-dot" class="badge" hidden></span>
+      </button>
+    </div>
+
+    <div id="menu" class="menu" role="menu" hidden>
+      <button id="history-btn" class="menu-item" type="button" role="menuitem">
+        <span>Recent changes</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+      </button>
+      <button id="alerts-btn" class="menu-item" type="button" role="menuitem">
+        <span>Alerts on this phone <span id="alerts-state" class="menu-detail"></span></span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+      </button>
+      <button id="account-btn" class="menu-item" type="button" role="menuitem">
+        <span id="account-label">Sign in as admin</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+      </button>
+      <div class="menu-foot">Boord Monitor <span id="version"></span></div>
     </div>
   </header>
 
   <main>
     <section id="banner" class="banner banner-unknown" aria-live="polite">
       <div class="banner-row">
-        <span class="banner-title" id="banner-title">Checking…</span>
-        <span class="banner-time" id="checked-at"></span>
+        <span class="banner-icon" aria-hidden="true"></span>
+        <div class="banner-text">
+          <span class="banner-title" id="banner-title">Checking…</span>
+          <span class="banner-time" id="checked-at"></span>
+        </div>
       </div>
       <div id="banner-problems" class="banner-problems"></div>
     </section>
@@ -46,39 +66,38 @@
     </div>
 
     <div id="groups" class="groups"></div>
-
-    <footer class="foot muted"><span id="version"></span> · tap any dot for detail</footer>
   </main>
 
-  <!-- One sheet for everything that used to be its own card: a check's full
-       story, the history, the alert settings. Built in app.js each time. -->
-  <dialog id="sheet">
-    <div id="sheet-body"></div>
-    <div class="row-actions">
-      <button class="btn btn-quiet" type="button" id="sheet-close">Close</button>
+  <!-- One bottom sheet for everything: a check's full story, the history,
+       the alert settings. Built in app.js each time. -->
+  <dialog id="sheet" class="sheet">
+    <div class="sheet-head">
+      <span class="grabber" aria-hidden="true"></span>
+      <button class="text-btn" type="button" id="sheet-close">Done</button>
     </div>
+    <div id="sheet-body"></div>
   </dialog>
 
-  <dialog id="pin-dialog">
+  <dialog id="pin-dialog" class="alert-dialog">
     <form method="dialog" id="pin-form">
       <h2>Admin PIN</h2>
-      <p class="muted">Needed to restart an app or turn on alerts.</p>
+      <p class="muted small">Needed to restart an app or turn on alerts.</p>
       <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required minlength="4">
-      <p id="pin-error" class="error" hidden></p>
-      <div class="row-actions">
-        <button class="btn" type="submit" value="ok">Sign in</button>
-        <button class="btn btn-quiet" type="button" id="pin-cancel">Cancel</button>
+      <p id="pin-error" class="error small" hidden></p>
+      <div class="alert-actions">
+        <button class="text-btn" type="button" id="pin-cancel">Cancel</button>
+        <button class="text-btn text-btn-strong" type="submit" value="ok">Sign In</button>
       </div>
     </form>
   </dialog>
 
-  <dialog id="restart-dialog">
+  <dialog id="restart-dialog" class="alert-dialog">
     <h2 id="restart-title">Restart</h2>
-    <p id="restart-warning" class="muted"></p>
+    <p id="restart-warning" class="muted small"></p>
     <pre id="restart-output" class="log" hidden></pre>
-    <div class="row-actions">
-      <button class="btn btn-danger" type="button" id="restart-go">Restart</button>
-      <button class="btn btn-quiet" type="button" id="restart-close">Cancel</button>
+    <div class="alert-actions">
+      <button class="text-btn" type="button" id="restart-close">Cancel</button>
+      <button class="text-btn text-btn-danger" type="button" id="restart-go">Restart</button>
     </div>
   </dialog>
 
