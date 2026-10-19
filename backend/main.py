@@ -218,8 +218,16 @@ def version():
             fv = m.group(1) if m else ""
         except OSError:
             fv = ""
+        # Ahead of the last tag (a branch checked out to try a fix), `tag` is
+        # git describe's "v1.5-3-gabc1234" rather than null, as in Labour's
+        # version.py: null told whoever read the heartbeat nothing about what
+        # was actually running, which is exactly when they need to know.
         tag = _git(["describe", "--tags", "--exact-match"])
-        state = "release" if tag else ("ahead" if _git(["describe", "--tags", "--always"]) else "unknown")
+        if tag:
+            state = "release"
+        else:
+            tag = _git(["describe", "--tags", "--always"])
+            state = "ahead" if tag else "unknown"
         _version_cache.update({"app": "Boord Monitor", "tag": tag or None, "state": state,
                                "frontend_version": fv, "role": config.ROLE})
     return _version_cache

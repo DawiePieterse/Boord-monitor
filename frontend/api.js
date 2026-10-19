@@ -4,7 +4,31 @@ const Monitor = {
   // Boord Monitor's release. Bump on every deploy that touches frontend code,
   // together with CACHE in service-worker.js; scripts/release.sh refuses a
   // tag that disagrees with it, and /api/version reads it back.
-  VERSION: "1.5.0",
+  VERSION: "1.5.1",
+
+  // A phone whose WiFi or mobile data is up but which cannot actually reach
+  // the farm (Tailscale asleep, the PC off) gets no error from fetch() - the
+  // request just hangs until the OS gives up, which can be minutes. Every
+  // request therefore gets a deadline, like Boord's api.js, and a blown
+  // deadline reads as an ordinary "can't reach" so the dashboard keeps the
+  // last picture on screen instead of a spinner.
+  NETWORK_TIMEOUT_MS: 8000,
+  OFFLINE_MESSAGE: "Can't reach the monitor - check Tailscale",
+
+  // True when the request never got an answer (offline, unreachable, timed
+  // out) rather than an answer that said no.
+  isNetworkError(e) {
+    return e instanceof TypeError || (!!e && (e.name === "AbortError" || e.name === "TimeoutError" || e.network === true));
+  },
+
+  // The words to show for a failure. Browsers word a dropped connection as
+  // "Failed to fetch" (Chrome) or "Load failed" (Safari), which tells someone
+  // in the orchard nothing; and FastAPI's 422 detail is a list of objects,
+  // which would print as "[object Object]".
+  errorText(e) {
+    if (Monitor.isNetworkError(e)) return Monitor.OFFLINE_MESSAGE;
+    return (e && e.message) || "Something went wrong";
+  },
 
   async api(path, options = {}) {
     const opts = { credentials: "same-origin", ...options };
@@ -12,11 +36,28 @@ const Monitor = {
       opts.headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
       opts.body = JSON.stringify(opts.body);
     }
-    const res = await fetch(path, opts);
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Monitor.NETWORK_TIMEOUT_MS);
+    let res;
     let data = null;
-    try { data = await res.json(); } catch (e) { /* empty or not JSON */ }
+    try {
+      res = await fetch(path, { ...opts, signal: controller.signal });
+      try { data = await res.json(); } catch (e) { /* empty or not JSON */ }
+    } catch (e) {
+      // Thrown as an Error carrying the plain message, so a caller that
+      // shows err.message directly still shows words a person can act on.
+      const err = new Error(Monitor.OFFLINE_MESSAGE);
+      err.network = true;
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
     if (!res.ok) {
-      const err = new Error((data && data.detail) || `HTTP ${res.status}`);
+      const detail = data && data.detail;
+      const text = Array.isArray(detail)
+        ? (detail[0] && detail[0].msg) || `HTTP ${res.status}`
+        : (typeof detail === "string" && detail) || `HTTP ${res.status}`;
+      const err = new Error(text);
       err.status = res.status;
       throw err;
     }
@@ -35,8 +76,19 @@ const Monitor = {
     const d = Monitor.parseServerDate(s);
     if (!d) return "";
     const today = new Date().toDateString() === d.toDateString();
-    const hm = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return today ? hm : d.toLocaleDateString([], { day: "numeric", month: "short" }) + " " + hm;
+    const hm = Monitor.hm(d);
+    return today ? hm : Monitor.day(d) + " " + hm;
+  },
+
+  // en-ZA and 24-hour, like every sibling app: the phones' own locale is
+  // often en-US, and "4:10 PM" next to Boord's "16:10" for the same moment
+  // makes people wonder which one is wrong.
+  hm(d) {
+    return d.toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit", hour12: false });
+  },
+
+  day(d) {
+    return d.toLocaleDateString("en-ZA", { day: "numeric", month: "short" });
   },
 
   ago(s) {

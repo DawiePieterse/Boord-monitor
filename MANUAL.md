@@ -109,17 +109,25 @@ watches, and the whole farm fits on one phone screen:
 example, Ports shows the PC's live mapping, and Restarts shows the
 watchdog's last log lines. An app's sheet has **Open app** and **Restart**.
 
-The three icons at the top right are:
+The two buttons at the top right are:
 
-- the **clock**: recent changes;
-- the **bell**: alerts on this phone, with a small green dot when they are on;
-- the **circular arrow**: check now.
+- the **circular arrow**: check now. Pulling the screen down does the same.
+- the **"..."** menu, with a small green dot when alerts are on for this
+  phone. It holds:
+  - **Recent changes**: what broke and was fixed, newest first;
+  - **Alerts on this phone**: turn alerts on or off, or send a test
+    (chapter 3);
+  - **Sign in as admin** / **Sign out**;
+  - at the bottom, the monitor's version.
 
 The page refreshes every 30 seconds, and the monitor itself checks every
-minute.
+minute. Under the banner it says when the last check ran. If that turns
+orange ("monitor stalled?"), the monitor itself has stopped checking.
 
 If your phone loses contact with the monitor, the last picture stays on
-screen with a note saying how old it is.
+screen with a note saying how old it is. "Can't reach the monitor - check
+Tailscale" means the phone got no answer within 8 seconds: check that
+Tailscale is on on the phone, then that the farm PC is on.
 
 ### What each problem means
 
@@ -146,7 +154,8 @@ Alerts are **push notifications** from the farm PC to your phone.
 1. Open the monitor's address in Safari.
 2. Tap **Share**, then **Add to Home Screen**.
 3. Open **Monitor** from the Home Screen icon. Not from Safari.
-4. Tap the **bell** at the top right, then **Turn on alerts**.
+4. Tap **"..."** at the top right, then **Alerts on this phone**, then
+   **Turn on alerts**.
    Enter the PIN if asked, then tap **Turn on alerts** again, and allow
    notifications.
 5. Tap **Send a test**. A notification should arrive within a few seconds.
@@ -190,7 +199,9 @@ as an automatic one:
 - It reports success only once the app answers again.
 
 The watchdog's own words appear in the restart window and in
-`data\watchdog.log`.
+`data\watchdog.log`. The window follows the restart for up to 5 minutes,
+and stops following it if you close the window. Closing it doesn't stop
+the restart: look at the app's tile afterwards.
 
 ## 5. Google Drive backups
 
@@ -348,6 +359,15 @@ To change the farm address or token, run the script again.
 On the farm PC, double-click **`update_monitor_server.bat`**. As with
 Boord, it installs only releases signed with the release key, then
 restarts the monitor.
+
+**Installed before version 1.5.1?** Run **`install.bat`** once more on the
+farm PC (it keeps your PIN, alerts and settings). Older installs registered
+the "Boord Monitor Server" task with Windows' default 72-hour time limit,
+so Windows stopped the monitor three days after every restart of the PC,
+and it never started again on its own after a crash. The updater doesn't
+change the task, so updating alone doesn't fix this. After re-running it,
+the task's settings show *Stop the task if it runs longer than* unticked,
+and *If the task fails, restart every 1 minute*.
 
 On the off-site watcher, run:
 

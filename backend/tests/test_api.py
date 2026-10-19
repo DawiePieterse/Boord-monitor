@@ -119,6 +119,40 @@ def test_version_and_frontend(client):
     assert "Boord Monitor" in page.text
 
 
+def test_version_ahead_of_tag_reports_describe(client, monkeypatch):
+    """Between releases the tag field carries git describe's string, not null,
+    so the heartbeat says what is actually running."""
+    import main
+
+    def fake_git(args):
+        if "--exact-match" in args:
+            return ""  # no tag on this commit
+        return "v1.5-3-gabc1234"
+    monkeypatch.setattr(main, "_git", fake_git)
+    monkeypatch.setattr(main, "_version_cache", {})
+    v = client.get("/api/version").json()
+    assert v["tag"] == "v1.5-3-gabc1234"
+    assert v["state"] == "ahead"
+
+
+def test_version_on_a_release_tag(client, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "_git", lambda args: "v1.5")
+    monkeypatch.setattr(main, "_version_cache", {})
+    v = client.get("/api/version").json()
+    assert v["tag"] == "v1.5"
+    assert v["state"] == "release"
+
+
+def test_version_without_git(client, monkeypatch):
+    import main
+    monkeypatch.setattr(main, "_git", lambda args: "")
+    monkeypatch.setattr(main, "_version_cache", {})
+    v = client.get("/api/version").json()
+    assert v["tag"] is None
+    assert v["state"] == "unknown"
+
+
 def test_versions_agree():
     """api.js VERSION and the service worker's CACHE move together."""
     import os

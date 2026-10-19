@@ -10,6 +10,9 @@
 const STATUS_WORD = { ok: "OK", warn: "Check", fail: "Problem", off: "Off", unknown: "Unknown" };
 const STATUS_VALUE = { ok: "ok", warn: "!", fail: "✕", off: "off", unknown: "–" };
 const REFRESH_MS = 30000;
+// How long the Restart dialog follows a restart before giving up on it. See
+// askRestart for why this is a bit over twice the watchdog's 150 s.
+const RESTART_WAIT_MS = 5 * 60 * 1000;
 
 let session = { role: "farm", admin: false };
 let last = null;
@@ -214,7 +217,7 @@ async function load(force = false) {
     // would say less than "this is what it looked like at 04:10".
     $("offline").hidden = false;
     $("offline-since").textContent = lastOkAt
-      ? `the picture from ${lastOkAt.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+      ? `the picture from ${Monitor.hm(lastOkAt)}`
       : "nothing yet";
     if (!last) {
       $("banner").className = "banner banner-fail";
@@ -270,17 +273,32 @@ $("account-btn").addEventListener("click", async () => {
 
 // --- PIN -----------------------------------------------------------------------
 
+// Resolves true once signed in, and null when the person backs out - by
+// Cancel, or by Escape (or a hardware keyboard's equivalent), which closes a
+// modal <dialog> through its own "cancel" event without touching our
+// buttons. Without that, Escape left the promise hanging and the Restart or
+// alerts tap that asked for the PIN never finished. Callers treat anything
+// but true as "cancelled".
 function askPin() {
   return new Promise((resolve) => {
     const dialog = $("pin-dialog");
     $("pin").value = "";
     $("pin-error").hidden = true;
+    let settled = false;
     const done = (ok) => {
+      if (settled) return;
+      settled = true;
       $("pin-form").onsubmit = null;
       $("pin-cancel").onclick = null;
-      dialog.close();
+      dialog.oncancel = null;
+      dialog.onclose = null;
+      if (dialog.open) dialog.close();
       resolve(ok);
     };
+    dialog.oncancel = () => done(null);
+    // Any other way the dialog shuts (a form method="dialog" submit the
+    // browser handles itself, script elsewhere) also counts as backing out.
+    dialog.onclose = () => done(null);
     $("pin-form").onsubmit = async (e) => {
       e.preventDefault();
       try {
@@ -288,11 +306,11 @@ function askPin() {
         await loadSession();
         done(true);
       } catch (err) {
-        $("pin-error").textContent = err.message;
+        $("pin-error").textContent = Monitor.errorText(err);
         $("pin-error").hidden = false;
       }
     };
-    $("pin-cancel").onclick = () => done(false);
+    $("pin-cancel").onclick = () => done(null);
     dialog.showModal();
     $("pin").focus();
   });
@@ -306,10 +324,12 @@ async function needAdmin() {
       el("p", {}, "No admin PIN has been set on the farm PC yet. Run backend\\set_pin.py there first."));
     return false;
   }
-  return askPin();
+  return (await askPin()) === true;
 }
 
 // --- restart -------------------------------------------------------------------
+
+let restartRun = 0;
 
 async function askRestart(c) {
   if (!(await needAdmin())) return;
@@ -332,20 +352,50 @@ async function askRestart(c) {
     try {
       await Monitor.api(`/api/apps/${encodeURIComponent(c.app)}/restart`, { method: "POST" });
     } catch (err) {
-      out.textContent = err.message;
+      out.textContent = Monitor.errorText(err);
       $("restart-go").disabled = false;
       return;
     }
     $("restart-go").hidden = true;
-    for (;;) {
+    // Follow the job until it ends - but not forever. The watchdog's own
+    // restart is given 150 s (restart.py) before the monitor calls it
+    // failed, so five minutes is past anything a real restart takes; a loop
+    // still going then is following a job nobody will ever finish, and a
+    // phone left polling in a pocket drains its battery for nothing. It also
+    // stops when the dialog is closed (nobody is watching) and on any 4xx:
+    // a signed-out cookie (401) or a refusal will not change by asking again
+    // every two seconds. A dropped connection (5xx, timeout) is retried,
+    // because the PC is busy restarting things and may be slow to answer.
+    const deadline = Date.now() + RESTART_WAIT_MS;
+    // Closing the dialog and opening it again for another app starts a new
+    // follow; this one must not keep writing into the reopened dialog.
+    const run = ++restartRun;
+    const watching = () => dialog.open && run === restartRun;
+    let job = null;
+    while (watching()) {
       await new Promise((r) => setTimeout(r, 2000));
-      let job;
-      try { job = await Monitor.api("/api/restart"); } catch (e) { continue; }
+      if (!watching()) return;
+      if (Date.now() > deadline) {
+        out.textContent += "\n\nStill not finished after 5 minutes. Close this and look at the app's tile - " +
+          "the watchdog log on the farm PC has the rest.";
+        return;
+      }
+      try {
+        job = await Monitor.api("/api/restart");
+      } catch (e) {
+        if (e.status >= 400 && e.status < 500) {
+          out.textContent += `\n\n${e.status === 401 ? "Signed out - sign in again to follow the restart." : Monitor.errorText(e)}`;
+          if (e.status === 401) loadSession();
+          return;
+        }
+        continue;
+      }
+      if (!watching()) return;
       out.textContent = (job.output || []).join("\n") || "Restarting…";
       if (job.state && job.state !== "running") {
         out.textContent += `\n\n${{ done: "Done.", refused: "Refused - see above.", failed: "Failed - see above." }[job.state] || job.state}`;
         load(true);
-        break;
+        return;
       }
     }
   };
@@ -421,12 +471,12 @@ async function alertsOn() {
     if (perm !== "granted") { await showAlerts(); return; }
     const reg = await navigator.serviceWorker.ready;
     const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(session.push_key) });
-    const label = `${isIOS() ? "iPhone" : "Phone"}, added ${new Date().toLocaleDateString([], { day: "numeric", month: "short" })}`;
+    const label = `${isIOS() ? "iPhone" : "Phone"}, added ${Monitor.day(new Date())}`;
     await Monitor.api("/api/push/subscribe", { method: "POST", body: { subscription: sub.toJSON(), label } });
     await loadSession();
     await showAlerts();
   } catch (e) {
-    await showAlerts(`Could not turn on alerts: ${e.message}`);
+    await showAlerts(`Could not turn on alerts: ${Monitor.errorText(e)}`);
   }
 }
 
@@ -439,7 +489,7 @@ async function sendTest() {
     const r = await Monitor.api("/api/push/test", { method: "POST" });
     await showAlerts(`Test sent to ${r.sent} of ${r.subscribers} phone(s).` + (r.failed ? ` ${r.failed} failed.` : ""));
   } catch (e) {
-    await showAlerts(e.message);
+    await showAlerts(Monitor.errorText(e));
   }
 }
 
@@ -454,7 +504,7 @@ async function alertsOff() {
 }
 
 async function signOut() {
-  await Monitor.api("/api/admin/logout", { method: "POST" });
+  await Monitor.api("/api/admin/logout", { method: "POST" }).catch(() => {});
   await loadSession();
   await showAlerts();
 }

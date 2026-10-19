@@ -250,7 +250,7 @@ set "MONITOR_BOORD_DIR=$boordDir"
     Set-Content -Path $LauncherPath -Value $launcher -Encoding ASCII
     Write-Ok "Created $LauncherPath"
 
-    # --- Step 8: Scheduled task (auto-start at boot, as SYSTEM - see the top) ---
+    # --- Step 7: Scheduled task (auto-start at boot, as SYSTEM - see the top) ---
     Write-Step "Registering the server to start automatically with Windows..."
     cmd /c "schtasks /query /tn ""$TaskName"" >nul 2>&1"
     if ($LASTEXITCODE -eq 0) {
@@ -259,13 +259,32 @@ set "MONITOR_BOORD_DIR=$boordDir"
         schtasks /delete /tn "$TaskName" /f | Out-Null
     }
     schtasks /create /tn "$TaskName" /tr "`"$LauncherPath`"" /sc onstart /ru SYSTEM /rl highest /f | Out-Null
-    Write-Ok "Scheduled task '$TaskName' registered (runs at every startup, no one needs to log in)"
+    # schtasks can't set these (copied from BoordOwner's install.ps1). The
+    # default execution time limit (72h) would otherwise have Windows stop the
+    # monitor three days after every boot - and a stopped monitor is the one
+    # thing that can't push to say it has stopped; the farm would only find
+    # out from the off-site watcher, or not at all. If the process dies (a
+    # crash, Python half-updated), the task must start it again rather than
+    # leave the farm unwatched until the next reboot. The battery flags undo
+    # schtasks' laptop defaults, which would refuse to start it - or kill it -
+    # on a PC running from a UPS. Best-effort: an old PowerShell without these
+    # cmdlets still gets the task itself.
+    try {
+        $taskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit ([TimeSpan]::Zero) `
+            -RestartCount 10 -RestartInterval (New-TimeSpan -Minutes 1) `
+            -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+        Set-ScheduledTask -TaskName $TaskName -Settings $taskSettings | Out-Null
+        Write-Ok "Scheduled task '$TaskName' registered (runs at every startup, no one needs to log in, restarts itself if it stops)"
+    } catch {
+        Write-Warn "Task registered, but couldn't set its restart policy: $($_.Exception.Message)"
+        Write-Warn "Windows will stop the monitor 72 hours after each boot until this is fixed."
+    }
 
-    # --- Step 9: Start it now ---
+    # --- Step 8: Start it now ---
     Write-Step "Starting the server now..."
     schtasks /run /tn "$TaskName" | Out-Null
 
-    # --- Step 10: Confirm it answers ---
+    # --- Step 9: Confirm it answers ---
     $serverUp = $false
     for ($i = 0; $i -lt 20; $i++) {
         Start-Sleep -Seconds 1
@@ -281,7 +300,7 @@ set "MONITOR_BOORD_DIR=$boordDir"
         Write-Warn "rather than being swallowed by the Scheduled Task."
     }
 
-    # --- Step 11: Report the address and how to publish it ---
+    # --- Step 10: Report the address and how to publish it ---
     Write-Host ""
     Write-Host "================================================" -ForegroundColor Cyan
     Write-Host " Setup complete!" -ForegroundColor Green
@@ -312,7 +331,7 @@ set "MONITOR_BOORD_DIR=$boordDir"
     Write-Host " The server will now start automatically every time this PC turns on."
     Write-Host " update_monitor_server.bat installs the newest SIGNED release and restarts it."
 
-    # --- Step 12: The trust root for updates ---
+    # --- Step 11: The trust root for updates ---
     #
     # Deliberately NOT written automatically. What this fingerprint decides is
     # which code this machine will accept in future, and this installer came
