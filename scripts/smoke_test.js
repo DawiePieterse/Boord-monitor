@@ -3,6 +3,11 @@
 // the banner and the check list actually render. Screenshots land in
 // SHOT_DIR (default: the system temp folder).
 //
+// The server in CI watches a farm with nothing installed, so it shows few
+// tiles. The "phone-busy" pass answers /api/status from
+// fixtures/busy_farm.json instead - two problems and sixteen devices - which
+// is what proves the one-screen promise on a real farm's worth of tiles.
+//
 //   MONITOR_DATA_DIR=/tmp/mon-dev python -m uvicorn main:app --port 8050   (in backend/)
 //   node ../scripts/smoke_test.js
 const path = require("path");
@@ -12,14 +17,23 @@ try { ({ chromium } = require("playwright")); } catch (e) { ({ chromium } = requ
 
 const BASE = process.env.MONITOR_URL || "http://localhost:8050/";
 const SHOT_DIR = process.env.SHOT_DIR || os.tmpdir();
+const BUSY = require(path.join(__dirname, "fixtures", "busy_farm.json"));
 
 (async () => {
   const launch = {};
   if (process.env.CHROMIUM_PATH) launch.executablePath = process.env.CHROMIUM_PATH;
   const browser = await chromium.launch(launch);
   let failed = false;
-  for (const [name, viewport] of [["phone", { width: 390, height: 844 }], ["desktop", { width: 1280, height: 900 }]]) {
-    const page = await browser.newPage({ viewport, colorScheme: name === "phone" ? "light" : "dark" });
+  const phone = { width: 390, height: 844 };
+  for (const [name, viewport] of [["phone", phone], ["phone-busy", phone], ["desktop", { width: 1280, height: 900 }]]) {
+    const page = await browser.newPage({ viewport, colorScheme: name === "desktop" ? "dark" : "light" });
+    if (name === "phone-busy") {
+      // Fresh timestamp, or the page would (rightly) say the monitor has
+      // stopped checking. Naive UTC, as the server sends it.
+      const body = JSON.stringify({ ...BUSY, checked_at: new Date().toISOString().slice(0, 19) });
+      await page.route(/\/api\/(status|check)$/, (route) =>
+        route.fulfill({ status: 200, contentType: "application/json", body }));
+    }
     const errors = [];
     page.on("pageerror", (e) => errors.push(String(e)));
     page.on("console", (m) => { if (m.type() === "error") errors.push(m.text()); });
@@ -33,7 +47,7 @@ const SHOT_DIR = process.env.SHOT_DIR || os.tmpdir();
     const shot = path.join(SHOT_DIR, `monitor-${name}.png`);
     await page.screenshot({ path: shot, fullPage: true });
     console.log(`${name}: banner "${title}", ${rows} tiles, page ${tall}px tall, screenshot ${shot}`);
-    if (name === "phone" && tall > viewport.height) { console.error(`phone: needs scrolling (${tall}px > ${viewport.height}px)`); failed = true; }
+    if (name.startsWith("phone") && tall > viewport.height) { console.error(`phone: needs scrolling (${tall}px > ${viewport.height}px)`); failed = true; }
     if (rows < 5) { console.error(`${name}: expected the tiles to render`); failed = true; }
     // Tap a tile: its sheet must open with the full sentence in it.
     await page.locator(".tile").first().click();
