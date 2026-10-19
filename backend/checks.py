@@ -720,7 +720,30 @@ def read_device_list() -> tuple:
     return (shown or None), hidden
 
 
-_BOORD_ID = re.compile(r"^device-(\d+)$", re.IGNORECASE)
+# "device-01", "Device 01" and "device01" are all Boord slot 01: tablets get
+# named by hand in Tailscale, so the separator is not reliable.
+_BOORD_ID = re.compile(r"^device[\s_-]*(\d+)$", re.IGNORECASE)
+
+
+def _tile_name(name: str) -> str:
+    """The name a tile shows for a tailnet device when devices.txt gives none.
+    Boord slots read "Dev 01" like their siblings, the farm PC's own tailnet
+    name is the unhelpful "localhost", and a MacBook's is a long
+    "macbook-pro-of-..." that the tile would cut to nothing anyway."""
+    low = name.strip().lower()
+    if low == "localhost":
+        return "Farm PC"
+    if low.startswith("macbook"):
+        return "Mac"
+    return _BOORD_ID.sub(r"Dev \1", name.strip())
+
+
+def _device_order(name: str) -> tuple:
+    """Boord's tablets first, in slot order (Dev 01 before Dev 02, whatever
+    the separator in their Tailscale name did to a plain alphabetical sort),
+    then everything else by name."""
+    m = _BOORD_ID.match(name.strip())
+    return (0, int(m.group(1)), "") if m else (1, 0, name.lower())
 
 
 def _peer_names(peer: dict) -> set:
@@ -753,7 +776,8 @@ def device_checks(sys: System, status: Optional[dict]) -> List[dict]:
     boord = sys.boord_devices(config.BOORD_DB)
 
     if listed is None:
-        wanted = [(n, n, "") for n in sorted({p.get("HostName") or "?" for p in peers}, key=str.lower)]
+        wanted = [(n, _tile_name(n), "")
+                  for n in sorted({p.get("HostName") or "?" for p in peers}, key=_device_order)]
     else:
         wanted = [w for w in listed if w[0].lower() not in hidden]
 
@@ -805,7 +829,9 @@ def device_checks(sys: System, status: Optional[dict]) -> List[dict]:
 
         # Boord: by the id given in devices.txt, or by the Tailscale name when
         # the tablet was simply named after its Boord slot (device-03).
-        bid = boord_id or (key if boord and key in boord else "")
+        m = _BOORD_ID.match(name.strip())
+        slot = f"device-{m.group(1)}" if m else key
+        bid = boord_id or (slot if boord and slot in boord else "")
         info = (boord or {}).get(bid) if bid else None
         if info:
             detail.append(f"Boord: {bid}" + (f" - {info['station']}" if info["station"] else "")

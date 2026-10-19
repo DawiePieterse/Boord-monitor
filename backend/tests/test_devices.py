@@ -29,7 +29,7 @@ def test_every_peer_shown_without_a_list(fake):
         peer("someone-elses-pc", sharee=True),
     ])
     d = devices(fake)
-    assert list(d) == ["dev.andre-iphone", "dev.device-02"]
+    assert list(d) == ["dev.device-02", "dev.andre-iphone"]
     assert d["dev.andre-iphone"]["status"] == "ok"
     assert d["dev.andre-iphone"]["value"] == "on"
     off = d["dev.device-02"]
@@ -68,7 +68,7 @@ def test_hidden_devices(fake):
     fake.ts = ts_status(peers=[peer("device-01"), peer("old-tablet"), peer("andre-iphone")])
     # Only hides: everything else on the tailnet is still shown.
     configure("-old-tablet")
-    assert list(devices(fake)) == ["dev.andre-iphone", "dev.device-01"]
+    assert list(devices(fake)) == ["dev.device-01", "dev.andre-iphone"]
     # With a list, a hide line also drops a listed name instead of warning.
     configure("device-01 | Field 1", "old-tablet", "- old-tablet")
     assert list(devices(fake)) == ["dev.device-01"]
@@ -169,3 +169,10 @@ def test_boord_with_and_without_queue_columns(tmp_path):
     con.close()
     got = System()._boord_devices(str(db))["device-01"]
     assert got["queue_pending"] == 3 and got["queue_reported_at"] == "2026-10-19 09:00:00"
+
+
+def test_names_and_order_without_a_list(fake):
+    fake.ts = ts_status(peers=[peer("MacBook-Pro-of-Dawie"), peer("localhost"), peer("device-02"),
+                               peer("Device01"), peer("device-10")])
+    d = devices(fake)
+    assert [c["short"] for c in d.values()] == ["Dev 01", "Dev 02", "Dev 10", "Farm PC", "Mac"]
