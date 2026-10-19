@@ -111,3 +111,61 @@ def test_real_boord_database_read_only(tmp_path):
     system._cache.clear()
     assert System().boord_devices(str(db)) is None
     assert System().boord_devices(str(tmp_path / "missing.db")) is None
+
+
+def queue(fake, pending, oldest_min, reported_min=2):
+    fake.boord = {"device-03": {"station": "Block 7", "role": "field", "last_seen": None, "last_sync": None,
+                                "queue_pending": pending,
+                                "queue_oldest": (NOW - dt.timedelta(minutes=oldest_min)).isoformat(sep=" ")
+                                if oldest_min is not None else None,
+                                "queue_reported_at": (NOW - dt.timedelta(minutes=reported_min)).isoformat(sep=" ")}}
+
+
+def test_crates_waiting_on_a_tablet(fake):
+    fake.ts = ts_status(peers=[peer("device-03")])
+    queue(fake, 14, 20)
+    c = devices(fake)["dev.device-03"]
+    assert c["status"] == "ok"
+    assert c["value"] == "14 wait"
+    assert c["queue"] == 14
+    assert "14 waiting to sync on the tablet, the oldest picked 20 min ago" in c["summary"]
+
+
+def test_crates_waiting_over_an_hour_warn_even_offline(fake):
+    fake.ts = ts_status(peers=[peer("device-03", online=False, last_seen=iso(NOW - dt.timedelta(hours=2)))])
+    queue(fake, 14, 95, reported_min=120)
+    c = devices(fake)["dev.device-03"]
+    assert c["status"] == "warn"
+    assert "exist only on that tablet" in c["summary"]
+    assert c["alert"] is False
+
+
+def test_nothing_waiting(fake):
+    fake.ts = ts_status(peers=[peer("device-03")])
+    queue(fake, 0, None)
+    c = devices(fake)["dev.device-03"]
+    assert c["value"] == "on" and c["queue"] == 0
+    assert any("Waiting to sync: nothing" in d for d in c["detail"])
+
+
+def test_boord_with_and_without_queue_columns(tmp_path):
+    from system import System
+    db = tmp_path / "boord.db"
+    con = sqlite3.connect(db)
+    con.executescript("""
+        CREATE TABLE device (id TEXT PRIMARY KEY, station TEXT, role TEXT, active BOOLEAN, last_seen DATETIME);
+        CREATE TABLE harvestrecord (uuid TEXT PRIMARY KEY, device_id TEXT, synced_at DATETIME);
+        INSERT INTO device VALUES ('device-01', '', 'field', 1, NULL);
+    """)
+    con.commit()
+    assert System()._boord_devices(str(db))["device-01"]["queue_pending"] is None  # Boord 3.16
+    con.executescript("""
+        ALTER TABLE device ADD COLUMN queue_pending INTEGER;
+        ALTER TABLE device ADD COLUMN queue_oldest DATETIME;
+        ALTER TABLE device ADD COLUMN queue_reported_at DATETIME;
+        UPDATE device SET queue_pending = 3, queue_reported_at = '2026-10-19 09:00:00';
+    """)
+    con.commit()
+    con.close()
+    got = System()._boord_devices(str(db))["device-01"]
+    assert got["queue_pending"] == 3 and got["queue_reported_at"] == "2026-10-19 09:00:00"

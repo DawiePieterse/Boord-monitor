@@ -65,7 +65,15 @@ SHORT = {
     "pc.uptime": "Uptime",
     "guards.log": "Restarts",
     "drive.app": "Drive",
+    "guards.update": "Update",
 }
+
+# A tablet that has held a crate unsent for longer than this is worth a look.
+# An hour, not minutes: a picker working the far end of a block is out of
+# signal for a while as a matter of course, and the crates sync on the walk
+# back. Past an hour the tablet is either broken off the network or every
+# sync is failing, and either way those crates exist nowhere else.
+QUEUE_WARN_S = 60 * 60
 
 
 def check(id: str, group: str, label: str, status: str, summary: str,
@@ -500,6 +508,44 @@ def pc_checks(sys: System) -> List[dict]:
     return out
 
 
+# --- Windows Update -------------------------------------------------------------
+
+def update_check(sys: System) -> Optional[dict]:
+    """Whether Windows is waiting to restart the PC to finish installing
+    updates. Windows restarts by itself outside its "active hours", and on a
+    farm PC those are often wrong for the pack house: a restart at 15:00 is
+    five minutes of every app gone in the middle of a shift, with the
+    watchdog standing down for the first five minutes after boot. The point
+    of this tile is to know beforehand and choose the moment.
+
+    A warning, never an alert: it is not broken, and the morning summary
+    carries it to the phone once a day."""
+    info = sys.windows_update()
+    if info is None:
+        return None
+    hours = info.get("active_hours")
+    active = f"{hours[0]:02d}:00-{hours[1]:02d}:00" if hours else None
+    if not info.get("reboot_pending"):
+        return check("guards.update", "guards", "Windows Update", "ok",
+                     "No restart waiting." + (f" Active hours: {active}." if active else ""),
+                     alert=False, value="ok")
+    when = _parse_iso(info.get("scheduled"))
+    summary = "Windows has installed updates and is waiting to restart this PC."
+    if when:
+        local = when.replace(tzinfo=dt.timezone.utc).astimezone().replace(tzinfo=None)
+        summary += f" It plans to restart at {local.strftime('%Y-%m-%d %H:%M')} (this PC's time)."
+    summary += (" Restart it yourself at a quiet time - every app is down for a few minutes - "
+                "or it will restart on its own outside its active hours"
+                + (f" ({active})" if active else "")
+                + ". Set active hours to cover the pack house in Settings > Windows Update > "
+                  "Advanced options.")
+    detail = [f"Waiting for: {', '.join(info.get('reasons') or [])}"]
+    if active:
+        detail.append(f"Active hours: {active}")
+    return check("guards.update", "guards", "Windows Update", "warn", summary, detail,
+                 alert=False, value="restart")
+
+
 # --- the watchdog's own record ----------------------------------------------
 
 _LOG_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})  (.*)$")
@@ -775,13 +821,37 @@ def device_checks(sys: System, status: Optional[dict]) -> List[dict]:
                 detail.append("Last crate received: never")
             if opened:
                 detail.append(f"Boord last opened: {_ago((sys.now() - opened).total_seconds())} ago")
+            # What the tablet last said it is holding unsent (Boord 3.17+).
+            pending = info.get("queue_pending")
+            reported = _parse_iso(info.get("queue_reported_at"))
+            if pending and reported:
+                said = _ago((sys.now() - reported).total_seconds())
+                oldest = _parse_iso(info.get("queue_oldest"))
+                what = f"{pending} waiting to sync on the tablet"
+                if oldest:
+                    held = (sys.now() - oldest).total_seconds()
+                    what += f", the oldest picked {_ago(held)} ago"
+                    if held > QUEUE_WARN_S:
+                        # A warning even when the tablet is offline - that is
+                        # the case that matters: those crates exist only on
+                        # it, and a dead battery or a fall loses them.
+                        status_ = "warn"
+                        what += (" - they exist only on that tablet until it syncs. Bring it "
+                                 "into signal, or check its sync status on its screen")
+                summary += f" {what} (as of {said} ago)."
+                value = f"{pending} wait"
+                detail.append(f"Waiting to sync: {pending} (reported {said} ago)")
+            elif pending == 0 and reported:
+                detail.append(f"Waiting to sync: nothing (reported "
+                              f"{_ago((sys.now() - reported).total_seconds())} ago)")
         elif bid:
             detail.append(f"Boord: no device '{bid}' in Boord's list")
 
         # The sheet's word for grey here is "Offline", not "Not installed".
         extra = {"word": "Offline"} if status_ == "off" else {}
         out.append(check(cid, "devices", label, status_, summary, detail, alert=False,
-                         value=value, short=short, **extra))
+                         value=value, short=short, online=bool(peer.get("Online")),
+                         queue=(info or {}).get("queue_pending") or 0, **extra))
     return out
 
 
@@ -813,6 +883,9 @@ def farm_checks(sys: System) -> List[dict]:
     out.append(_task_check(sys, tasks, apps.HEARTBEAT_TASK, "guards.heartbeat", "Heartbeat", 10,
                            "No email reaches anyone when this PC is off - run Boord's setup_heartbeat.bat."))
     out.append(watchdog_log_check(sys))
+    update = update_check(sys)
+    if update:
+        out.append(update)
     out.extend(drive_checks(sys))
     out.extend(device_checks(sys, status))
     return out

@@ -83,6 +83,13 @@ FAIL_AFTER = int(os.environ.get("MONITOR_FAIL_AFTER", "3"))
 # never again - a single 03:00 notification is easily swiped away unread.
 REMIND_EVERY_S = int(os.environ.get("MONITOR_REMIND_HOURS", "6")) * 3600
 
+# The morning summary: once a day, at this time on the farm PC's own clock,
+# every phone with alerts on gets one "Farm: all good" (or what isn't). Its
+# real job is to prove the alert path still works: without it, a quiet phone
+# means either that the farm is fine or that alerts died weeks ago, and
+# nobody can tell which. "off" turns it off.
+DAILY_AT = os.environ.get("MONITOR_DAILY_AT", "06:00").strip().lower()
+
 # --- remote role ----------------------------------------------------------
 # The farm monitor's tailnet address, e.g. https://farm-pc.tail1234.ts.net:8050
 FARM_URL = os.environ.get("MONITOR_FARM_URL", "").rstrip("/")

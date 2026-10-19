@@ -15,6 +15,9 @@ _TMP = tempfile.mkdtemp(prefix="boordmonitor-tests-")
 os.environ["MONITOR_DATA_DIR"] = os.path.join(_TMP, "data")
 os.environ["MONITOR_BOORD_DIR"] = os.path.join(_TMP, "Boord")
 os.environ["MONITOR_NO_LOOP"] = "1"
+# Off unless a test turns it on: every other test counts pushes, and the
+# fake PC's clock sits inside the morning summary's window.
+os.environ["MONITOR_DAILY_AT"] = "off"
 os.environ["MONITOR_TAILSCALE"] = "tailscale"
 os.makedirs(os.path.join(_TMP, "Boord", "data"), exist_ok=True)
 
@@ -94,6 +97,9 @@ class FakeSystem:
         self.drive_running = True
         self.folders = {}  # folder -> newest file's (path, mtime) or None; absent = can't open
         self.boord = None  # what boord_devices returns
+        self.update = {"reboot_pending": False, "reasons": [], "active_hours": [6, 18], "scheduled": None}
+        # The PC's own clock: South Africa, two hours ahead of NOW (UTC).
+        self.local_value = NOW + dt.timedelta(hours=2)
         self.versions = {8000: {"version": "3.15", "tag": "v3.15", "migrations_applied": True,
                                 "backups": {"last": "2026-10-18 02:00", "count": 14}, "update": None},
                          8040: {"tag": "v1.0.2"}, 8050: {"tag": "v1.0.0"}}
@@ -165,6 +171,12 @@ class FakeSystem:
 
     def boord_devices(self, db_path):
         return self.boord
+
+    def windows_update(self):
+        return self.update if self.windows else None
+
+    def local_now(self):
+        return self.local_value
 
     def process_running(self, image):
         return self.drive_running if self.windows else None

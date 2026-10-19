@@ -13,6 +13,9 @@ The rule for waking a phone, in one place:
 What has been alerted is saved to data/state.json. Without it, restarting
 the monitor would forget that the phone was already told, and every update
 would re-send every standing problem.
+
+Besides the alerts, one summary a day (config.DAILY_AT), so that a silent
+phone can be trusted to mean a quiet farm.
 """
 import datetime as dt
 import json
@@ -38,25 +41,33 @@ _streaks: Dict[str, dict] = {}
 _events: List[dict] = []
 _last_farm: Optional[dict] = None
 _last_bundle = 0.0
+_daily_last = ""  # the farm PC's local date the morning summary last went out
 _run_lock = threading.Lock()
+
+# How late the morning summary may still go out. A monitor that was down at
+# 06:00 and back at 09:00 still sends it - "all good" at 09:00 is still
+# worth knowing - but not at 15:00, when it would read as news.
+DAILY_LATE_S = 6 * 3600
 
 
 def _load_state() -> None:
-    global _streaks, _events
+    global _streaks, _events, _daily_last
     try:
         with open(STATE_FILE, encoding="utf-8") as fh:
             saved = json.load(fh)
         _streaks = saved.get("streaks") or {}
         _events = saved.get("events") or []
+        _daily_last = saved.get("daily_last") or ""
     except (OSError, ValueError, AttributeError):
-        _streaks, _events = {}, []
+        _streaks, _events, _daily_last = {}, [], ""
 
 
 def _save_state() -> None:
     tmp = STATE_FILE + ".tmp"
     try:
         with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump({"streaks": _streaks, "events": _events[-MAX_EVENTS:]}, fh)
+            json.dump({"streaks": _streaks, "events": _events[-MAX_EVENTS:],
+                       "daily_last": _daily_last}, fh)
         os.replace(tmp, STATE_FILE)
     except OSError as e:
         log.warning("could not save %s: %s", STATE_FILE, e)
@@ -64,8 +75,9 @@ def _save_state() -> None:
 
 def reset() -> None:
     """Tests only: forget everything."""
-    global latest, _streaks, _events, _last_farm, _last_bundle
+    global latest, _streaks, _events, _last_farm, _last_bundle, _daily_last
     latest, _streaks, _events, _last_farm, _last_bundle = {}, {}, [], None, 0.0
+    _daily_last = ""
 
 
 def _stamp(t: dt.datetime) -> str:
@@ -137,6 +149,63 @@ def compose(decision: dict) -> List[tuple]:
     return out
 
 
+def _daily_due(local: dt.datetime) -> bool:
+    """Whether the morning summary should go out now: past DAILY_AT on the
+    PC's clock, not yet sent today, and not more than DAILY_LATE_S late."""
+    if config.ROLE != "farm" or config.DAILY_AT in ("", "off", "no", "none"):
+        return False
+    try:
+        hour, minute = (int(x) for x in config.DAILY_AT.split(":"))
+        start = local.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    except ValueError:
+        log.warning("MONITOR_DAILY_AT=%r is not HH:MM - no morning summary", config.DAILY_AT)
+        return False
+    return (_daily_last != local.date().isoformat()
+            and 0 <= (local - start).total_seconds() < DAILY_LATE_S)
+
+
+def compose_daily(results: List[dict]) -> tuple:
+    """(title, body) of the morning summary. Short lines, most important
+    first: a lock screen shows three or four of them."""
+    fails = [c for c in results if c["status"] == "fail"]
+    warns = [c for c in results if c["status"] == "warn"]
+    if fails:
+        title = f"Farm: {len(fails)} problem{'s' if len(fails) > 1 else ''}"
+    elif warns:
+        title = f"Farm: all up, {len(warns)} to check"
+    else:
+        title = "Farm: all good"
+
+    lines = []
+    if fails:
+        lines.append("Problem: " + ", ".join(c["short"] for c in fails))
+    if warns:
+        lines.append("Check: " + ", ".join(c["short"] for c in warns))
+    apps_ = [c for c in results if c["group"] == "apps" and c["status"] != "off"]
+    if apps_:
+        up = sum(1 for c in apps_ if c["status"] != "fail")
+        lines.append(f"Apps: {up} of {len(apps_)} up")
+    devices = [c for c in results if c["group"] == "devices" and c.get("online") is not None]
+    if devices:
+        line = f"Devices: {sum(1 for c in devices if c['online'])} of {len(devices)} online"
+        waiting = [c for c in devices if c.get("queue")]
+        if waiting:
+            total = sum(c["queue"] for c in waiting)
+            line += f", {total} crate{'s' if total > 1 else ''} waiting on " + \
+                ", ".join(c["short"] for c in waiting)
+        lines.append(line)
+    folders = [c for c in results if c["id"].startswith("drive.folder.") and c.get("value")]
+    if folders:
+        lines.append("Backups: " + ", ".join(f"{c['short']} {c['value']}" for c in folders))
+    restarts = next((c for c in results if c["id"] == "guards.log"), None)
+    if restarts and restarts.get("value") not in (None, "0x"):
+        lines.append(f"Watchdog restarts (24 h): {restarts['value'].rstrip('x')}")
+    update = next((c for c in results if c["id"] == "guards.update"), None)
+    if update and update["status"] == "warn":
+        lines.append("Windows wants to restart the PC")
+    return title, "\n".join(lines)
+
+
 def _refresh_bundle(sys: System) -> None:
     """Remote role: copy the farm's push key and subscription list, hourly,
     while the farm can still be reached. The copy is what lets the watcher
@@ -190,8 +259,20 @@ def run_once(sys: System) -> dict:
             if config.ROLE == "remote":
                 snapshot["farm"] = _last_farm
                 snapshot["farm_url"] = config.FARM_URL or None
+            daily = None
+            local = sys.local_now()
+            if _daily_due(local):
+                global _daily_last
+                _daily_last = local.date().isoformat()
+                daily = compose_daily(results)
             latest = snapshot
             _save_state()
+    if daily:
+        try:
+            result = push.send(daily[0], daily[1], url=_alert_url(), tag="daily", badge=alerting)
+            log.info("morning summary %r: %s", daily[0], result)
+        except Exception as e:  # noqa: BLE001 - never let a push kill the loop
+            log.warning("morning summary failed: %s", e)
     for title, body, tag in compose(decision):
         try:
             result = push.send(title, body, url=_alert_url(), tag=tag, badge=alerting)

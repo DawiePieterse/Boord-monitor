@@ -50,6 +50,9 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
   - Offline is status `off` with `word` "Offline". It never warns or alerts, because tablets are off at night.
   - Only a peer key expiring within 14 days warns.
   - Boord detail (station, last crate's `synced_at`) comes from Boord's `boord.db`, opened `mode=ro`, via `System.boord_devices`. A schema it can't read just drops the detail.
+- **Tablet outbox** (Boord 3.17+): field tablets post their unsent count to Boord (`POST /api/devices/{id}/queue`, stored on Boord's `device` row). The monitor reads it from `boord.db` with the rest of the device detail. Warns past `QUEUE_WARN_S` (an hour), never alerts. An older Boord without the columns just shows no queue.
+- **Windows Update** (`checks.update_check`, the `guards.update` tile): a pending restart, read from the registry (`winreg`), plus the Update Orchestrator's next Reboot task. It warns and never alerts.
+- **Morning summary** (`monitor._daily_due` / `compose_daily`): one push a day at `MONITOR_DAILY_AT` (default 06:00, PC local time, `System.local_now`), at most `DAILY_LATE_S` late, farm role only. `daily_last` in `state.json` stops a restart from sending it twice. The tests turn it off (conftest), and `test_daily.py` turns it on.
 - **Up/down follows watchdog.ps1's rule:** any HTTP answer, even 500, means up. A 500 is a warning. `/api/version` is read for info only, never for up/down.
 - **Installed = scheduled task registered** (Windows). An app whose task is absent is `off`, not down, and is not expected in the serve table. Off Windows, `query_tasks` returns None and every app is checked.
 - **Scheduled tasks are read with `Get-ScheduledTaskInfo` → JSON,** not `schtasks /v`, whose labels follow the PC's display language.

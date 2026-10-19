@@ -142,6 +142,8 @@ Tailscale is on on the phone, then that the farm PC is on.
 | *Database migrations were not applied* | An update of Boord didn't finish. Run Boord's `update_server.bat` again. |
 | *Disk almost full* | Free space on the farm PC. SQLite can't write without room. |
 | *Watchdog / Heartbeat: Not set up* | Run Boord's `setup_watchdog.bat` / `setup_heartbeat.bat`. |
+| *Update: restart* | Windows has installed updates and will restart the PC by itself outside its active hours, taking every app down for a few minutes. Restart it yourself at a quiet time, or set active hours to cover the pack house in Settings > Windows Update > Advanced options. |
+| *Dev 03: 14 wait* (amber) | That tablet has held crates unsent for over an hour, and they exist nowhere else. Bring it into signal, and check its sync status on its screen. |
 | *Google Drive: Not running* | Nothing is being uploaded. Log in on the farm PC and start Google Drive if it doesn't start itself. |
 | *The newest backup is N days old* | Backups have stopped reaching that folder. Check the app's own backup card, then the folder. |
 
@@ -171,7 +173,32 @@ On Android, Chrome can do this from an ordinary tab.
 - Again **every 6 hours** while the problem lasts.
 - Once more when it is **fixed** ("back to normal").
 
-Amber warnings never send an alert. They wait on the dashboard.
+Amber warnings never send an alert. They wait on the dashboard, and in the
+morning summary.
+
+**The morning summary.** Every morning at **06:00** (the farm PC's clock),
+each phone with alerts on gets one notification. It says either *Farm: all
+good* or what isn't, for example:
+
+```
+Farm: all up, 2 to check
+Check: Disk, Update
+Apps: 5 of 5 up
+Devices: 7 of 9 online, 14 crates waiting on Dev 03
+Backups: Boord 6h, Kudde 2d
+Windows wants to restart the PC
+```
+
+Its real job is to prove the alerts still work. Without it, a quiet phone
+means either that the farm is fine or that alerts stopped reaching you weeks
+ago, and you can't tell which. **If a morning passes with no summary, check
+the alerts:** tap the bell and send a test.
+
+If the monitor was off at 06:00, the summary comes when it starts, up to
+midday. After midday it waits for the next morning. To change the time, or
+turn the summary off, set `MONITOR_DAILY_AT` in `start_monitor_server.bat`,
+for example `set "MONITOR_DAILY_AT=05:30"` or `set "MONITOR_DAILY_AT=off"`.
+Then restart the monitor.
 
 To stop alerts on a phone, tap **Turn off**. That needs no PIN. Removing
 the app from the Home Screen also stops them, and the monitor forgets that
@@ -283,7 +310,21 @@ device id (`device-03`), its sheet also says:
 
 - its station and role in Boord;
 - when Boord last received a crate from it. This uses the farm PC's clock,
-  so a tablet with the wrong date can't make it look current.
+  so a tablet with the wrong date can't make it look current;
+- **how many crates it is still holding unsent** (from Boord 3.17). The
+  tablet reports this after each sync attempt that reaches the farm PC, and
+  the tile then shows, for example, *14 wait*. Until they sync, those crates
+  exist only on that tablet.
+
+  **The tile turns amber when the oldest unsent crate is over an hour old**,
+  even if the tablet is offline. Pickers at the far end of a block are out
+  of signal for a while, and their crates sync on the walk back. After an
+  hour, though, the tablet is cut off or its syncs are failing, and a flat
+  battery or a fall would lose those crates.
+
+  The count is the tablet's last report: an offline tablet's count is from
+  when it last had signal. Like everything under Devices, it never sends an
+  alert, but the morning summary names any tablet with crates waiting.
 
 The tile shows Boord's ids short, as *Dev 03*. The monitor reads Boord's
 database only to look; it never changes it.

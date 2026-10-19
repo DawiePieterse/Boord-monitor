@@ -235,8 +235,9 @@ class System:
         return _cached(("boord_devices", db_path), BOORD_DEVICES_TTL_S, lambda: self._boord_devices(db_path))
 
     def _boord_devices(self, db_path: str) -> Optional[Dict[str, dict]]:
-        """{Boord device id: {station, role, last_seen, last_sync}}
-        from Boord's database, or None if it can't be read.
+        """{Boord device id: {station, role, last_seen, last_sync, queue_pending,
+        queue_oldest, queue_reported_at}} from Boord's database, or None if it
+        can't be read.
 
         Opened read-only (mode=ro), as Boord Labour opens it: the monitor
         must never be the thing holding a write lock on the pack house's
@@ -250,7 +251,17 @@ class System:
         try:
             con = sqlite3.connect(uri, uri=True, timeout=5)
             try:
-                rows = con.execute("SELECT id, station, role, last_seen FROM device").fetchall()
+                # The queue columns arrived in Boord 3.17 (each field tablet
+                # reports what it is still holding unsent). An older Boord
+                # has none of them: read the rest, and the tiles just go
+                # without the queue.
+                try:
+                    rows = con.execute(
+                        "SELECT id, station, role, last_seen, queue_pending, queue_oldest, "
+                        "queue_reported_at FROM device").fetchall()
+                except sqlite3.OperationalError:
+                    rows = [r + (None, None, None) for r in
+                            con.execute("SELECT id, station, role, last_seen FROM device").fetchall()]
                 synced = dict(con.execute(
                     "SELECT device_id, MAX(synced_at) FROM harvestrecord "
                     "WHERE device_id IS NOT NULL GROUP BY device_id").fetchall())
@@ -262,7 +273,68 @@ class System:
             # devices' Tailscale status still shows.
             return None
         return {r[0]: {"station": r[1] or "", "role": r[2] or "",
-                       "last_seen": r[3], "last_sync": synced.get(r[0])} for r in rows}
+                       "last_seen": r[3], "last_sync": synced.get(r[0]),
+                       "queue_pending": r[4], "queue_oldest": r[5], "queue_reported_at": r[6]}
+                for r in rows}
+
+    def local_now(self) -> dt.datetime:
+        """The farm PC's own clock, for the one thing that follows the day
+        people live by: the morning summary."""
+        return dt.datetime.now()
+
+    def windows_update(self) -> Optional[dict]:
+        """Whether Windows has installed updates and is waiting to restart,
+        when it plans to, and its active hours; None off Windows. Cached:
+        none of this changes minute to minute."""
+        if not IS_WINDOWS:
+            return None
+        return _cached(("windows_update",), WINDOWS_UPDATE_TTL_S, self._windows_update)
+
+    def _windows_update(self) -> dict:
+        # The registry, through winreg, rather than PowerShell: these are
+        # the keys Windows itself sets, they read in microseconds, and their
+        # names do not change with the display language.
+        import winreg
+        hklm = winreg.HKEY_LOCAL_MACHINE
+
+        def exists(path: str) -> bool:
+            try:
+                winreg.CloseKey(winreg.OpenKey(hklm, path))
+                return True
+            except OSError:
+                return False
+
+        reasons = []
+        if exists(r"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired"):
+            reasons.append("Windows Update")
+        if exists(r"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"):
+            reasons.append("a Windows component")
+
+        active = None
+        try:
+            with winreg.OpenKey(hklm, r"SOFTWARE\Microsoft\WindowsUpdate\UX\Settings") as k:
+                start = winreg.QueryValueEx(k, "ActiveHoursStart")[0]
+                end = winreg.QueryValueEx(k, "ActiveHoursEnd")[0]
+                active = [int(start), int(end)]
+        except (OSError, ValueError):
+            pass
+
+        # When it means to restart: the Update Orchestrator's own Reboot
+        # tasks. Asked only when a restart is actually waiting, so a PC with
+        # nothing pending never starts PowerShell for this.
+        scheduled = None
+        if reasons:
+            rc, out, _err = self.powershell(
+                "[Console]::OutputEncoding = [Text.Encoding]::UTF8; "
+                "$t = Get-ScheduledTask -TaskPath '\\Microsoft\\Windows\\UpdateOrchestrator\\' "
+                "-ErrorAction SilentlyContinue | Where-Object { $_.TaskName -like 'Reboot*' } | "
+                "Get-ScheduledTaskInfo | Where-Object { $_.NextRunTime -gt (Get-Date) } | "
+                "Sort-Object NextRunTime | Select-Object -First 1; "
+                "if ($t) { $t.NextRunTime.ToUniversalTime().ToString('o') }", timeout=30)
+            if rc == 0 and out.strip():
+                scheduled = out.strip()
+        return {"reboot_pending": bool(reasons), "reasons": reasons,
+                "active_hours": active, "scheduled": scheduled}
 
     def is_windows(self) -> bool:
         return IS_WINDOWS
@@ -274,6 +346,7 @@ class System:
 # minute.
 NEWEST_FILE_TTL_S = 10 * 60
 BOORD_DEVICES_TTL_S = 5 * 60
+WINDOWS_UPDATE_TTL_S = 10 * 60
 _cache: Dict[tuple, tuple] = {}
 
 
