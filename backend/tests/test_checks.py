@@ -207,3 +207,19 @@ def test_every_tile_has_something_to_show(fake):
 
 def test_short_durations():
     assert [checks._short(s) for s in (40, 61, 3 * 3600, 86400, 3 * 86400)] == ["40s", "1m", "3h", "24h", "3d"]
+
+
+def test_windows_update(fake):
+    c = by_id(checks.farm_checks(fake))["guards.update"]
+    assert c["status"] == "ok" and "06:00-18:00" in c["summary"]
+    fake.update = {"reboot_pending": True, "reasons": ["Windows Update"], "active_hours": [6, 18],
+                   "scheduled": "2026-10-19T01:00:00.0000000Z"}
+    import system
+    system._cache.clear()
+    c = by_id(checks.farm_checks(fake))["guards.update"]
+    assert c["status"] == "warn" and c["alert"] is False
+    assert c["value"] == "restart" and c["short"] == "Update"
+    assert "plans to restart at 2026-10-19" in c["summary"]
+    assert checks.worst(checks.farm_checks(fake)) == "warn"
+    fake.windows = False
+    assert "guards.update" not in by_id(checks.farm_checks(fake))
