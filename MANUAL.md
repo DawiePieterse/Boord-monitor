@@ -105,6 +105,12 @@ watches, and the whole farm fits on one phone screen:
 - **Disk** and **Memory** are bars: the fuller the bar, the fuller the disk
   or memory.
 
+On a farm with many devices the screen tightens itself to stay on one
+screen. First the spacing shrinks. If that isn't enough, the devices become
+small dots with names, and a device's number shows only when it needs a
+look. On a small phone, such as an iPhone SE, a long device list can still
+need a short scroll.
+
 **Tap any tile** for the whole explanation and what to do about it. For
 example, Ports shows the PC's live mapping, and Restarts shows the
 watchdog's last log lines. An app's sheet has **Open app** and **Restart**.

@@ -97,7 +97,9 @@ button { font: inherit; color: inherit; }
 }
 .nav-titles { display: flex; flex-direction: column; min-width: 0; }
 .nav-title { margin: 0; font-size: 30px; font-weight: 700; letter-spacing: -.02em; line-height: 1.1; }
-.nav-sub { font-size: 13px; color: var(--muted); }
+/* Room reserved before /api/session fills it in ("Farm PC"), so the header
+   never grows after the tiles have been fitted to the screen. */
+.nav-sub { font-size: 13px; color: var(--muted); min-height: 1.35em; }
 .nav-actions { display: flex; gap: 6px; padding-bottom: 2px; }
 .icon-btn {
   position: relative; width: 38px; height: 38px; border: 0; border-radius: 50%;
@@ -234,6 +236,30 @@ main { max-width: 760px; margin: 0 auto; padding: 6px 16px 12px; }
 .bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--ok); }
 .bar-warn { background: var(--warn); }
 .bar-fail { background: var(--fail); }
+
+/* --- fitting one phone screen (fitScreen in app.js) -------------------------------- */
+/* Step one: the same screen with less air - padding, gaps and tile heights
+   trimmed, nothing hidden. */
+body.dense .nav-title { font-size: 26px; }
+body.dense main { padding-top: 2px; }
+body.dense .banner { padding: 8px 12px; margin-bottom: 8px; }
+body.dense .banner-problems { margin: 8px -12px -8px; }
+body.dense .problem { padding: 6px 12px; }
+body.dense .groups { gap: 7px; }
+body.dense .card { padding: 6px; }
+body.dense .card h2 { margin-bottom: 4px; }
+body.dense .tiles { gap: 5px; }
+body.dense .tile { min-height: 48px; padding: 3px 2px; }
+body.dense .tile-meter { padding: 4px 10px; }
+body.dense .tiles-small .tile { min-height: 40px; }
+/* Step two, for a farm with a long device list: devices become small dots
+   with their names, seven or eight across, and keep their number only when
+   something about them needs a look. Every detail is still a tap away. */
+body.densest .tiles-small { grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 4px; }
+body.densest .tiles-small .tile { min-height: 32px; padding: 2px 1px; gap: 1px; }
+body.densest .tiles-small .tile-name { font-size: 10px; }
+body.densest .tiles-small .tile-ok .tile-value,
+body.densest .tiles-small .tile-off .tile-value { display: none; }
 
 .dot { flex: none; width: 11px; height: 11px; border-radius: 50%; background: var(--off); }
 .dot-ok { background: var(--ok); }

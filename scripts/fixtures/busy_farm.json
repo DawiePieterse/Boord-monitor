@@ -1,0 +1,560 @@
+{
+ "role": "farm",
+ "checked_at": "2026-10-19T09:20:39",
+ "overall": "fail",
+ "groups": [
+  [
+   "apps",
+   "Apps"
+  ],
+  [
+   "tailscale",
+   "Tailscale"
+  ],
+  [
+   "pc",
+   "Farm PC"
+  ],
+  [
+   "guards",
+   "Safety nets"
+  ],
+  [
+   "backups",
+   "Drive backups"
+  ],
+  [
+   "devices",
+   "Devices"
+  ]
+ ],
+ "alerting": 0,
+ "checks": [
+  {
+   "id": "app.boord",
+   "group": "apps",
+   "label": "Boord",
+   "short": "Boord",
+   "status": "ok",
+   "summary": "Up - answered in 15 ms.",
+   "detail": [
+    "Last backup: 2026-10-18 02:00"
+   ],
+   "alert": true,
+   "value": "15ms",
+   "app": "boord",
+   "port": 8000,
+   "ts_port": 443,
+   "local_ms": 15,
+   "local_status": 200,
+   "url": "https://farm-pc.tail1234.ts.net/",
+   "tailnet": true,
+   "version": "3.15",
+   "restartable": true
+  },
+  {
+   "id": "app.owner",
+   "group": "apps",
+   "label": "Boord Owner",
+   "short": "Owner",
+   "status": "ok",
+   "summary": "Up - answered in 15 ms.",
+   "detail": [],
+   "alert": true,
+   "value": "15ms",
+   "app": "owner",
+   "port": 8010,
+   "ts_port": 8443,
+   "local_ms": 15,
+   "local_status": 200,
+   "url": "https://farm-pc.tail1234.ts.net:8443/",
+   "tailnet": true,
+   "version": null,
+   "restartable": true
+  },
+  {
+   "id": "app.notes",
+   "group": "apps",
+   "label": "Boord Notes",
+   "short": "Notes",
+   "status": "ok",
+   "summary": "Up - answered in 15 ms.",
+   "detail": [],
+   "alert": true,
+   "value": "15ms",
+   "app": "notes",
+   "port": 8020,
+   "ts_port": 9443,
+   "local_ms": 15,
+   "local_status": 200,
+   "url": "https://farm-pc.tail1234.ts.net:9443/app/",
+   "tailnet": true,
+   "version": null,
+   "restartable": true
+  },
+  {
+   "id": "app.kudde",
+   "group": "apps",
+   "label": "Kudde",
+   "short": "Kudde",
+   "status": "fail",
+   "summary": "Not answering on port 8030 (connection refused).",
+   "detail": [],
+   "alert": true,
+   "value": "down",
+   "app": "kudde",
+   "port": 8030,
+   "ts_port": 8030,
+   "local_ms": null,
+   "local_status": null,
+   "url": "https://farm-pc.tail1234.ts.net:8030/",
+   "tailnet": null,
+   "version": null,
+   "restartable": true
+  },
+  {
+   "id": "app.labour",
+   "group": "apps",
+   "label": "Boord Labour",
+   "short": "Labour",
+   "status": "ok",
+   "summary": "Up - answered in 15 ms.",
+   "detail": [],
+   "alert": true,
+   "value": "15ms",
+   "app": "labour",
+   "port": 8040,
+   "ts_port": 8040,
+   "local_ms": 15,
+   "local_status": 200,
+   "url": "https://farm-pc.tail1234.ts.net:8040/",
+   "tailnet": true,
+   "version": "v1.0.2",
+   "restartable": true
+  },
+  {
+   "id": "ts.state",
+   "group": "tailscale",
+   "label": "Tailscale",
+   "short": "Online",
+   "status": "ok",
+   "summary": "Connected as farm-pc.tail1234.ts.net (100.64.0.1).",
+   "detail": [],
+   "alert": true
+  },
+  {
+   "id": "ts.key",
+   "group": "tailscale",
+   "label": "Tailscale key",
+   "short": "Key",
+   "status": "ok",
+   "summary": "Expires 2026-12-20, in 62 days.",
+   "detail": [],
+   "alert": true,
+   "value": "62d"
+  },
+  {
+   "id": "ts.serve",
+   "group": "tailscale",
+   "label": "Published ports",
+   "short": "Ports",
+   "status": "fail",
+   "summary": ":443 should be Boord (localhost:8000) but goes to http://localhost:8010 (Boord Owner). Run: tailscale serve --bg --https=443 http://localhost:8000",
+   "detail": [
+    ":443 should be Boord (localhost:8000) but goes to http://localhost:8010 (Boord Owner). Run: tailscale serve --bg --https=443 http://localhost:8000",
+    "Live mapping:",
+    ":443 -> http://localhost:8010",
+    ":8030 -> http://localhost:8030",
+    ":8040 -> http://localhost:8040",
+    ":8050 -> http://localhost:8050",
+    ":8443 -> http://localhost:8010",
+    ":9443 -> http://localhost:8020"
+   ],
+   "alert": true,
+   "value": "5/6"
+  },
+  {
+   "id": "ts.cert",
+   "group": "tailscale",
+   "label": "HTTPS certificate",
+   "short": "Cert",
+   "status": "ok",
+   "summary": "Valid until 2026-12-16 (58 days).",
+   "detail": [],
+   "alert": true,
+   "value": "58d"
+  },
+  {
+   "id": "pc.disk",
+   "group": "pc",
+   "label": "Disk",
+   "short": "Disk",
+   "status": "warn",
+   "summary": "Getting full: 4.0 GB free of 500.0 GB on / (1%).",
+   "detail": [],
+   "alert": true,
+   "pct": 99,
+   "value": "4 GB free"
+  },
+  {
+   "id": "pc.memory",
+   "group": "pc",
+   "label": "Memory",
+   "short": "Memory",
+   "status": "ok",
+   "summary": "50% in use (8.0 GB free of 16.0 GB).",
+   "detail": [],
+   "alert": true,
+   "pct": 50,
+   "value": "50% used"
+  },
+  {
+   "id": "pc.uptime",
+   "group": "pc",
+   "label": "Running since",
+   "short": "Uptime",
+   "status": "ok",
+   "summary": "Up 3 days (booted 2026-10-16 09:20 UTC).",
+   "detail": [],
+   "alert": false,
+   "value": "3d"
+  },
+  {
+   "id": "guards.watchdog",
+   "group": "guards",
+   "label": "Watchdog",
+   "short": "Watchdog",
+   "status": "ok",
+   "summary": "Last ran 3 min ago.",
+   "detail": [],
+   "alert": true,
+   "value": "3m"
+  },
+  {
+   "id": "guards.heartbeat",
+   "group": "guards",
+   "label": "Heartbeat",
+   "short": "Heartbeat",
+   "status": "ok",
+   "summary": "Last ran 3 min ago.",
+   "detail": [],
+   "alert": true,
+   "value": "3m"
+  },
+  {
+   "id": "guards.log",
+   "group": "guards",
+   "label": "Watchdog log",
+   "short": "Restarts",
+   "status": "ok",
+   "summary": "Restarted in the last 24 h: Boord.",
+   "detail": [
+    "2026-10-19 06:20:39  Restarting Boord..."
+   ],
+   "alert": false,
+   "value": "1x"
+  },
+  {
+   "id": "guards.update",
+   "group": "guards",
+   "label": "Windows Update",
+   "short": "Update",
+   "status": "ok",
+   "summary": "No restart waiting. Active hours: 06:00-18:00.",
+   "detail": [],
+   "alert": false,
+   "value": "ok"
+  },
+  {
+   "id": "drive.app",
+   "group": "backups",
+   "label": "Google Drive",
+   "short": "Drive",
+   "status": "ok",
+   "summary": "Running, so it can upload.",
+   "detail": [],
+   "alert": true
+  },
+  {
+   "id": "drive.folder.0",
+   "group": "backups",
+   "label": "Boord",
+   "short": "Boord",
+   "status": "ok",
+   "summary": "Newest backup 9 h ago: backup_1.zip.",
+   "detail": [
+    "C:\\Users\\Andre\\My Drive\\Farm\\Boord"
+   ],
+   "alert": true,
+   "value": "9h"
+  },
+  {
+   "id": "drive.folder.1",
+   "group": "backups",
+   "label": "Kudde",
+   "short": "Kudde",
+   "status": "ok",
+   "summary": "Newest backup 2 days ago: backup_2.zip.",
+   "detail": [
+    "C:\\Users\\Andre\\My Drive\\Farm\\Kudde"
+   ],
+   "alert": true,
+   "value": "2d"
+  },
+  {
+   "id": "dev.admin-pc",
+   "group": "devices",
+   "label": "admin-pc",
+   "short": "admin-pc",
+   "status": "ok",
+   "summary": "Online now.",
+   "detail": [
+    "Tailscale: admin-pc (windows) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.andre-iphone",
+   "group": "devices",
+   "label": "andre-iphone",
+   "short": "andre-iphone",
+   "status": "warn",
+   "summary": "Its Tailscale key expires 2026-10-25: it will drop off the tailnet. In the Tailscale admin console, open the machine's menu and choose 'Disable key expiry'. Online now.",
+   "detail": [
+    "Tailscale: andre-iphone (iOS) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.device-01",
+   "group": "devices",
+   "label": "device-01",
+   "short": "Dev 01",
+   "status": "ok",
+   "summary": "Online now. Last crate received 7 min ago.",
+   "detail": [
+    "Tailscale: device-01 (iOS) 100.64.0.9",
+    "Boord: device-01 - Block 1 (field)",
+    "Last crate received: 7 min ago (2026-10-19 09:13 UTC)"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.device-02",
+   "group": "devices",
+   "label": "device-02",
+   "short": "Dev 02",
+   "status": "ok",
+   "summary": "Online now. Last crate received 14 min ago.",
+   "detail": [
+    "Tailscale: device-02 (iOS) 100.64.0.9",
+    "Boord: device-02 - Block 2 (field)",
+    "Last crate received: 14 min ago (2026-10-19 09:06 UTC)"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.device-03",
+   "group": "devices",
+   "label": "device-03",
+   "short": "Dev 03",
+   "status": "off",
+   "summary": "Offline - last seen 2 h ago. Last crate received 21 min ago.",
+   "detail": [
+    "Tailscale: device-03 (iOS) 100.64.0.9",
+    "Boord: device-03 - Block 3 (field)",
+    "Last crate received: 21 min ago (2026-10-19 08:59 UTC)"
+   ],
+   "alert": false,
+   "value": "2h",
+   "online": false,
+   "queue": 0,
+   "word": "Offline"
+  },
+  {
+   "id": "dev.device-04",
+   "group": "devices",
+   "label": "device-04",
+   "short": "Dev 04",
+   "status": "ok",
+   "summary": "Online now. Last crate received 28 min ago.",
+   "detail": [
+    "Tailscale: device-04 (iOS) 100.64.0.9",
+    "Boord: device-04 - Block 4 (field)",
+    "Last crate received: 28 min ago (2026-10-19 08:52 UTC)"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.device-05",
+   "group": "devices",
+   "label": "device-05",
+   "short": "Dev 05",
+   "status": "off",
+   "summary": "Offline - last seen 3 days ago. Last crate received 35 min ago.",
+   "detail": [
+    "Tailscale: device-05 (iOS) 100.64.0.9",
+    "Boord: device-05 - Block 5 (field)",
+    "Last crate received: 35 min ago (2026-10-19 08:45 UTC)"
+   ],
+   "alert": false,
+   "value": "3d",
+   "online": false,
+   "queue": 0,
+   "word": "Offline"
+  },
+  {
+   "id": "dev.device-06",
+   "group": "devices",
+   "label": "device-06",
+   "short": "Dev 06",
+   "status": "ok",
+   "summary": "Online now.",
+   "detail": [
+    "Tailscale: device-06 (android) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.device-07",
+   "group": "devices",
+   "label": "device-07",
+   "short": "Dev 07",
+   "status": "ok",
+   "summary": "Online now.",
+   "detail": [
+    "Tailscale: device-07 (android) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.device-08",
+   "group": "devices",
+   "label": "device-08",
+   "short": "Dev 08",
+   "status": "ok",
+   "summary": "Online now.",
+   "detail": [
+    "Tailscale: device-08 (iOS) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.device-09",
+   "group": "devices",
+   "label": "device-09",
+   "short": "Dev 09",
+   "status": "off",
+   "summary": "Offline - last seen 9 h ago.",
+   "detail": [
+    "Tailscale: device-09 (iOS) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "9h",
+   "online": false,
+   "queue": 0,
+   "word": "Offline"
+  },
+  {
+   "id": "dev.device-10",
+   "group": "devices",
+   "label": "device-10",
+   "short": "Dev 10",
+   "status": "ok",
+   "summary": "Online now.",
+   "detail": [
+    "Tailscale: device-10 (iOS) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.device-11",
+   "group": "devices",
+   "label": "device-11",
+   "short": "Dev 11",
+   "status": "ok",
+   "summary": "Online now.",
+   "detail": [
+    "Tailscale: device-11 (iOS) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.device-12",
+   "group": "devices",
+   "label": "device-12",
+   "short": "Dev 12",
+   "status": "off",
+   "summary": "Offline - last seen 12 h ago.",
+   "detail": [
+    "Tailscale: device-12 (iOS) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "12h",
+   "online": false,
+   "queue": 0,
+   "word": "Offline"
+  },
+  {
+   "id": "dev.device-13",
+   "group": "devices",
+   "label": "device-13",
+   "short": "Dev 13",
+   "status": "ok",
+   "summary": "Online now.",
+   "detail": [
+    "Tailscale: device-13 (iOS) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  },
+  {
+   "id": "dev.office-pc",
+   "group": "devices",
+   "label": "office-pc",
+   "short": "office-pc",
+   "status": "ok",
+   "summary": "Online now.",
+   "detail": [
+    "Tailscale: office-pc (windows) 100.64.0.9"
+   ],
+   "alert": false,
+   "value": "on",
+   "online": true,
+   "queue": 0
+  }
+ ],
+ "events": []
+}

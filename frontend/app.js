@@ -156,6 +156,42 @@ function render() {
     }
   }
   $("groups").replaceChildren(...cards.filter(Boolean));
+  fitScreen();
+}
+
+// The whole farm on one phone screen, however many devices it has. Tightening
+// the stylesheet by hand only moves the limit - one more tablet and it
+// scrolls again - so the page measures itself instead: after each draw it
+// tries the normal layout, then "dense" (less padding everywhere), then
+// "densest" (devices shrink to small dots, their numbers only where
+// something is wrong). Phones only: a wide screen has two columns and room.
+function fitScreen() {
+  const body = document.body;
+  body.classList.remove("dense", "densest");
+  if (window.innerWidth >= 640) return;
+  const tooTall = () => document.documentElement.scrollHeight > window.innerHeight + 1;
+  for (const step of ["dense", "densest"]) {
+    if (!tooTall()) return;
+    body.classList.add(step);
+  }
+}
+
+// Turning the phone, or the toolbar showing and hiding, changes the height -
+// and so can the parts drawn outside render(): the header, and the status
+// card's stale and offline notes. Refit when any of them changes size. A
+// refit that changes nothing reports no new size, so this settles at once.
+let _fitTimer = null;
+const refit = () => {
+  clearTimeout(_fitTimer);
+  _fitTimer = setTimeout(fitScreen, 100);
+};
+window.addEventListener("resize", refit);
+if ("ResizeObserver" in window) {
+  const watch = new ResizeObserver(refit);
+  for (const sel of [".nav", "#banner", "#offline"]) {
+    const node = document.querySelector(sel);
+    if (node) watch.observe(node);
+  }
 }
 
 // --- the sheet ------------------------------------------------------------------
