@@ -4,7 +4,7 @@ const Monitor = {
   // Boord Monitor's release. Bump on every deploy that touches frontend code,
   // together with CACHE in service-worker.js; scripts/release.sh refuses a
   // tag that disagrees with it, and /api/version reads it back.
-  VERSION: "1.8",
+  VERSION: "1.9",
 
   // A phone whose WiFi or mobile data is up but which cannot actually reach
   // the farm (Tailscale asleep, the PC off) gets no error from fetch() - the

@@ -12,6 +12,18 @@
   <link rel="manifest" href="manifest.json">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="stylesheet" href="styles.css">
+  <script>
+  // One release per page load. The service worker takes over open pages as soon
+  // as a new release installs (skipWaiting + clients.claim), so a page that was
+  // still loading can end up with index.html from the old offline copy and the
+  // files fetched after the takeover from the new release - a mix that can leave
+  // a screen blank (Boord's white Admin screen, Packhouse's empty Setup page).
+  // Reload once, so every file comes from the same release. Inline and first, so
+  // the listener is in place before any other file loads.
+  if ("serviceWorker" in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.addEventListener("controllerchange", () => location.reload());
+  }
+  </script>
 </head>
 <body>
   <!-- An iOS-style navigation bar: a large title, one button for the thing
