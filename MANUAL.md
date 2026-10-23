@@ -416,6 +416,15 @@ change the task, so updating alone doesn't fix this. After re-running it,
 the task's settings show *Stop the task if it runs longer than* unticked,
 and *If the task fails, restart every 1 minute*.
 
+**Installed before version 1.8?** Run **`install.bat`** once more. The
+launcher it writes (`start_monitor_server.bat`) now starts the monitor
+again 15 seconds after it stops for any reason, and writes everything the
+monitor prints to `data\server.log`. Look there first when the monitor
+has been down: a crash prints its error just before the "Server exited"
+line. The installer also reserves port 8050 so Windows (Hyper-V, WSL or
+Docker) cannot hand it to something else at boot. Updating alone changes
+neither.
+
 On the off-site watcher, run:
 
 ```sh
@@ -435,6 +444,7 @@ remote/install_remote.sh <same URL> <same token>
 | `data\drive_backups.txt` | The Google Drive backup folders to check (chapter 5). Not a credential. |
 | `data\devices.txt` | Which devices to show, and their names (chapter 6). Optional. |
 | `data\state.json` | What has been alerted, so a restart of the monitor doesn't re-send standing problems. |
+| `data\server.log` | Everything the monitor prints, with each start and exit stamped. The previous one is `server.log.1`. |
 
 None of these is committed to git. If you lose `data\`, everything still
 works: set the PIN again, turn alerts on again on each phone, and give the
