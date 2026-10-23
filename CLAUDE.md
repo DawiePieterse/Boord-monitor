@@ -77,6 +77,9 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
   - **The smoke test** fails if the phone layout needs scrolling, both against the live server and in the `phone-busy` pass. That pass answers `/api/status` from `scripts/fixtures/busy_farm.json`: two problems and 16 devices.
 - **Every push must show a notification** (`service-worker.js`). iOS revokes push for a site that receives a push silently.
 - **Copied from Boord Labour:** `install.ps1`, `update_monitor_server.bat` and `scripts/release.sh`. Keep fixes flowing between the copies. The updater's import list must equal `requirements.txt` (a test checks this).
+- **`install.ps1` adds the repo folder to Git's machine-wide `safe.directory`.** The monitor runs as SYSTEM, and the folder belongs to the admin account that cloned it, so Git refused it as "dubious ownership" and `/api/version` reported `"tag": null`. Boord Owner's and Boord Notes' installers carry the same block, so change all three together.
+- **Releases are signed tags made by the owner, from an up-to-date `main`.** `release.sh` checks that `VERSION` matches the tag. Run `git pull --ff-only origin main` first anyway: a stale clone is how Boord Notes' `v2.16` ended up on a months-old commit.
+- **The off-site watcher** runs on the owner's Mac from `~/Documents/Projects/Boord-monitor` (launchd `com.boord.monitor-remote`). Moving that folder breaks both the launchd job and the `.venv`. After a move, delete `backend/.venv` and re-run `remote/install_remote.sh` with the same URL and token.
 
 ## Conventions
 
