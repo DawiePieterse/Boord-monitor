@@ -133,6 +133,26 @@
    "restartable": true
   },
   {
+   "id": "app.packhouse",
+   "group": "apps",
+   "label": "Boord Packhouse",
+   "short": "Pack",
+   "status": "ok",
+   "summary": "Up - answered in 15 ms.",
+   "detail": [],
+   "alert": true,
+   "value": "15ms",
+   "app": "packhouse",
+   "port": 8060,
+   "ts_port": 8060,
+   "local_ms": 15,
+   "local_status": 200,
+   "url": "https://farm-pc.tail1234.ts.net:8060/",
+   "tailnet": true,
+   "version": "v0.1.0",
+   "restartable": true
+  },
+  {
    "id": "ts.state",
    "group": "tailscale",
    "label": "Tailscale",
@@ -167,11 +187,12 @@
     ":8030 -> http://localhost:8030",
     ":8040 -> http://localhost:8040",
     ":8050 -> http://localhost:8050",
+    ":8060 -> http://localhost:8060",
     ":8443 -> http://localhost:8010",
     ":9443 -> http://localhost:8020"
    ],
    "alert": true,
-   "value": "5/6"
+   "value": "6/7"
   },
   {
    "id": "ts.cert",

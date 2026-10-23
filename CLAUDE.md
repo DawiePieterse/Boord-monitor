@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Boord Monitor watches the farm PC: the five sibling apps (Boord 8000, Owner 8010, Notes 8020, Kudde 8030, Labour 8040), Tailscale (connection, node key expiry, `tailscale serve` mapping, certificate), the PC itself (disk, memory, uptime), and Boord's watchdog and heartbeat tasks. It shows a dashboard PWA, sends Web Push alerts, and has a PIN-protected Restart button. `MANUAL.md` is the user and admin manual.
+Boord Monitor watches the farm PC: the six sibling apps (Boord 8000, Owner 8010, Notes 8020, Kudde 8030, Labour 8040, Packhouse 8060), Tailscale (connection, node key expiry, `tailscale serve` mapping, certificate), the PC itself (disk, memory, uptime), and Boord's watchdog and heartbeat tasks. It shows a dashboard PWA, sends Web Push alerts, and has a PIN-protected Restart button. `MANUAL.md` is the user and admin manual.
 
 It shares no database or code with the siblings. It does call into Boord's repo: it reads Boord's `data/watchdog.log` and runs Boord's `watchdog.ps1 -Restart "<Name>"` (`MONITOR_BOORD_DIR`).
 
 ## The Boord suite
 
-This app is one of six that run together on the farm PC (`bekfontein-server`), each its own repo, process, port and database. They are reached only over Tailscale, and each binds `127.0.0.1` and is published with `tailscale serve`. The same section is in every app's `CLAUDE.md`. When a fact here changes, change it in all six.
+This app is one of seven that run together on the farm PC (`bekfontein-server`), each its own repo, process, port and database. They are reached only over Tailscale, and each binds `127.0.0.1` and is published with `tailscale serve`. The same section is in every app's `CLAUDE.md`. When a fact here changes, change it in all seven.
 
 | App | Repo (`DawiePieterse/…`) | What it does | Port | Tailnet address | Mac folder | Farm PC folder |
 |---|---|---|---|---|---|---|
@@ -19,15 +19,16 @@ This app is one of six that run together on the farm PC (`bekfontein-server`), e
 | Boord Notes | `boord-notes` | Private farm notebook for Andre and his son, offline-first, optional AI. | 8020 | `https://bekfontein-server.taile32cb0.ts.net:9443/` | `~/Documents/Projects/BoordNotes` | `C:\bekfontein-farm-notebook` |
 | Kudde | `Kudde` | Cattle records: animals and their events. | 8030 | `https://bekfontein-server.taile32cb0.ts.net:8030/` | `~/Documents/Projects/Kudde` | `C:\Kudde` |
 | Boord Labour | `Boord-labour` | Packhouse time clock: badge scans at the door, hourly pay with overtime. | 8040 | `https://bekfontein-server.taile32cb0.ts.net:8040/` | `~/Documents/Projects/Boord-labour` | `C:\Boord-labour` |
-| **Boord Monitor** (this app) | `Boord-monitor` | Watches the PC and the other five apps; Web Push alerts and a Restart button. | 8050 | `https://bekfontein-server.taile32cb0.ts.net:8050/` | `~/Documents/Projects/Boord-monitor` | `C:\boord-monitor` |
+| **Boord Monitor** (this app) | `Boord-monitor` | Watches the PC and the other six apps; Web Push alerts and a Restart button. | 8050 | `https://bekfontein-server.taile32cb0.ts.net:8050/` | `~/Documents/Projects/Boord-monitor` | `C:\boord-monitor` |
+| Boord Packhouse | `boord-packhouse` | After receiving to the truck: sulfur, acid, lines, pre-pack, cold store and PPECB, dispatch. | 8060 | `https://bekfontein-server.taile32cb0.ts.net:8060/` | `~/Documents/Projects/Boord-packhouse` | `C:\Boord-packhouse` |
 
 **How they depend on each other:**
-- **Boord is the hub.** Its `data/boord.db` is opened read-only by Owner (harvest, lots, blocks, suppliers), Labour (the worker register, and Boord's `data/photos` for faces) and Monitor (tablet station, last sync and outbox).
+- **Boord is the hub.** Its `data/boord.db` is opened read-only by Owner (harvest, lots, blocks, suppliers), Labour (the worker register, and Boord's `data/photos` for faces), Monitor (tablet station, last sync and outbox) and, once its modules land, Packhouse (received lots, blocks, suppliers, workers).
   - Boord is that database's only writer and migrates it at startup.
   - Owner and Labour refuse to boot if a column they read disappears. A Boord migration that drops or renames a column needs those apps updated in step.
 - **Labour's badges are Boord's.** The badge QR holds exactly `worker.id` (`Boord/frontend/admin/print-badge.html`), and Labour vendors Boord's `frontend/shared/`.
 - **Owner asks Notes.** The "Ask the farm notes" bridge calls Notes' `/api/ai/ask` at `OWNER_NOTES_URL` (`http://127.0.0.1:8020`) and can share Notes' `data/anthropic_key.txt`.
-- **Boord keeps the others running.** Boord's `watchdog.ps1` (restarts an app that stops answering) and `heartbeat.ps1` cover all six.
+- **Boord keeps the others running.** Boord's `watchdog.ps1` (restarts an app that stops answering) and `heartbeat.ps1` cover all seven.
   - Their app table (name, port, task, health path) must match Monitor's `backend/apps.py` and the port table above. Change them together.
   - Monitor reads Boord's `data/watchdog.log`, and its Restart button runs Boord's `watchdog.ps1 -Restart "<Name>"`.
 - **Monitor watches everything.** It shows each app's up/down state and `/api/version`, Tailscale and the PC, and pushes an alert after three failed checks in a row.

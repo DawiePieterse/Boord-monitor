@@ -66,9 +66,9 @@ def serve_for(mapping, funnel=()):
     return out
 
 
-GOOD_SERVE = {443: 8000, 8443: 8010, 9443: 8020, 8030: 8030, 8040: 8040, 8050: 8050}
+GOOD_SERVE = {443: 8000, 8443: 8010, 9443: 8020, 8030: 8030, 8040: 8040, 8050: 8050, 8060: 8060}
 ALL_TASKS = ["Boord Server", "Boord Owner Server", "Boord Notes Server", "Kudde Server",
-             "Boord Labour Server", "Boord Watchdog", "Boord Heartbeat"]
+             "Boord Labour Server", "Boord Packhouse Server", "Boord Watchdog", "Boord Heartbeat"]
 
 
 class FakeSystem:
@@ -102,7 +102,8 @@ class FakeSystem:
         self.local_value = NOW + dt.timedelta(hours=2)
         self.versions = {8000: {"version": "3.15", "tag": "v3.15", "migrations_applied": True,
                                 "backups": {"last": "2026-10-18 02:00", "count": 14}, "update": None},
-                         8040: {"tag": "v1.0.2"}, 8050: {"tag": "v1.0.0"}}
+                         8040: {"tag": "v1.0.2"}, 8050: {"tag": "v1.0.0"},
+                         8060: {"tag": "v0.1.0"}}
         self.calls = []
 
     def now(self):

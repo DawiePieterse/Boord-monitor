@@ -86,7 +86,7 @@ def test_what_it_says(fake, pushed, monkeypatch):
     lines = d["body"].split("\n")
     assert lines[0] == "Problem: Kudde"
     assert lines[1].startswith("Check: Disk") and "Update" in lines[1]
-    assert "Apps: 4 of 5 up" in lines
+    assert "Apps: 5 of 6 up" in lines
     assert "Devices: 1 of 2 online, 14 crates waiting on Dev 02" in lines
     assert "Windows wants to restart the PC" in lines
 
