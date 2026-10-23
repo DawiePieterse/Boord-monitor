@@ -255,9 +255,28 @@ if errorlevel 1 (
 >"%~dp0data\installed_version.txt" echo !NEWTAG!
 
 echo.
-echo ==^> Restarting the server...
-cmd /c "schtasks /end /tn ""%TASK%"" >nul 2>&1"
-timeout /t 2 /nobreak >nul
+echo ==^> Stopping the server...
+:: Not just "schtasks /end". That ends the launcher; the uvicorn process it
+:: spawned can outlive it and keep port 8050, and the new release then
+:: cannot start - the old one carries on with nothing to start it again if
+:: it dies. stop_server.ps1 ends the task, checks the port is actually free,
+:: and refuses rather than guessing.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0stop_server.ps1"
+if errorlevel 1 (
+    echo.
+    echo *** THE SERVER COULD NOT BE STOPPED ***
+    echo.
+    echo Something is still listening on port 8050. The code is on !NEWTAG!
+    echo but the server was never restarted, so it is still running the
+    echo release from before. Read the message above for what holds the
+    echo port, stop it, and run this again.
+    echo.
+    pause
+    exit /b 1
+)
+
+echo.
+echo ==^> Starting the server...
 schtasks /run /tn "%TASK%" >nul
 
 echo.
@@ -272,8 +291,7 @@ for /l %%i in (1,1,20) do (
 if defined OK (
     echo     Server is back up on port 8050, running !NEWTAG!.
 ) else (
-    echo     Server did not answer in 20s - run start_monitor_server.bat in a
-    echo     window to see why.
+    echo     Server did not answer in 20s - data\server.log says why.
 )
 echo.
 pause
