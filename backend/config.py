@@ -2,7 +2,7 @@
 
 The same code runs in two places, chosen by MONITOR_ROLE:
 
-  farm    (the default) - on the farm PC, beside the five apps it watches.
+  farm    (the default) - on the farm PC, beside the six apps it watches.
           It can see everything local: the ports, the scheduled tasks, the
           watchdog log, the disk, and what `tailscale serve` is publishing.
           It is also the only one that can restart anything. What it cannot
@@ -32,7 +32,8 @@ if ROLE not in ("farm", "remote"):
 DATA_DIR = os.environ.get("MONITOR_DATA_DIR", os.path.join(REPO_ROOT, "data"))
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# Clear of Boord 8000, Owner 8010, Notes 8020, Kudde 8030, Labour 8040.
+# Clear of Boord 8000, Owner 8010, Notes 8020, Kudde 8030, Labour 8040,
+# Packhouse 8060.
 # Bound to 127.0.0.1 by the installer and published by `tailscale serve
 # --https=8050`, the same as every sibling.
 PORT = int(os.environ.get("MONITOR_PORT", "8050"))

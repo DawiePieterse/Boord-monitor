@@ -3,7 +3,7 @@
 Boord Monitor is one screen that answers "is the farm all right?", and a
 phone alert when it isn't. It watches:
 
-- **The apps**: Boord, Boord Owner, Boord Notes, Kudde and Boord Labour. For
+- **The apps**: Boord, Boord Owner, Boord Notes, Kudde, Boord Labour and Boord Packhouse. For
   each one it checks that the app answers on the farm PC, that it can be
   reached over Tailscale, and which version it runs. Boord also reports
   unapplied database migrations, its last backup and any waiting update.
