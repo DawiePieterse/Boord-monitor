@@ -102,7 +102,8 @@ class FakeSystem:
         self.local_value = NOW + dt.timedelta(hours=2)
         self.versions = {8000: {"version": "3.15", "tag": "v3.15", "migrations_applied": True,
                                 "backups": {"last": "2026-10-18 02:00", "count": 14}, "update": None},
-                         8040: {"tag": "v1.0.2"}, 8050: {"tag": "v1.0.0"}}
+                         8040: {"tag": "v1.0.2"}, 8050: {"tag": "v1.0.0"},
+                         8060: {"tag": "v0.18"}}
         self.calls = []
 
     def now(self):

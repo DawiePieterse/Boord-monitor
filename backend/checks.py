@@ -58,6 +58,7 @@ SHORT = {
     "app.owner": "Owner",
     "app.notes": "Notes",
     "app.labour": "Labour",
+    "app.packhouse": "Pack",
     "ts.state": "Online",
     "ts.key": "Key",
     "ts.serve": "Ports",
