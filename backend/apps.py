@@ -46,6 +46,8 @@ APPS: List[App] = [
     App("kudde", "Kudde", 8030, 8030, "Kudde Server", health="/healthz"),
     App("labour", "Boord Labour", 8040, 8040, "Boord Labour Server",
         version="/api/version"),
+    App("packhouse", "Boord Packhouse", 8060, 8060, "Boord Packhouse Server",
+        health="/api/version", version="/api/version"),
 ]
 
 # This app. Not probed as an app - if it is answering the dashboard it is up -

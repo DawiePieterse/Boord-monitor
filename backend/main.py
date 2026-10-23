@@ -1,4 +1,4 @@
-"""Boord Monitor: one screen for whether the farm PC, its five apps and its
+"""Boord Monitor: one screen for whether the farm PC, its six apps and its
 Tailscale connection are all right - and a phone alert when they are not.
 
 One `uvicorn main:app` process. On the farm PC (MONITOR_ROLE=farm) it runs
