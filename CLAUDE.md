@@ -165,7 +165,7 @@ After moving that folder, delete `backend/.venv` and run `install_remote.sh` aga
 
 Merging to `main` changes nothing on the farm. A release is a signed tag, and the farm PC installs it when its updater runs.
 
-1. **Merge the PR on GitHub.** A frontend change must already bump `VERSION` in `frontend/shared/api.js` and the service worker's `CACHE`.
+1. **Merge the PR on GitHub.** A frontend change must already bump `VERSION` in `frontend/api.js` and `CACHE` in `frontend/service-worker.js`.
 2. **On your Mac, bring the clone up to date.** This step is what stops a tag landing on an old commit:
    ```sh
    cd ~/Documents/Projects/Boord-monitor && git checkout main && git pull --ff-only origin main
