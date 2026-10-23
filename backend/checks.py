@@ -167,7 +167,9 @@ $out = foreach ($n in @(%s)) {
   if ($t) {
     $i = $t | Get-ScheduledTaskInfo
     $last = $null; if ($i.LastRunTime) { $last = $i.LastRunTime.ToUniversalTime().ToString('o') }
-    [pscustomobject]@{ Name = $n; State = "$($t.State)"; LastRun = $last; LastResult = $i.LastTaskResult }
+    $a = $t.Actions | Select-Object -First 1
+    $act = $null; if ($a) { $act = "$($a.Execute) $($a.Arguments)" }
+    [pscustomobject]@{ Name = $n; State = "$($t.State)"; LastRun = $last; LastResult = $i.LastTaskResult; Action = $act }
   }
 }
 ConvertTo-Json -InputObject @($out) -Compress
@@ -194,7 +196,7 @@ def query_tasks(sys: System, names: List[str]) -> Optional[Dict[str, dict]]:
 
 
 def _task_check(sys: System, tasks: Optional[Dict[str, dict]], name: str, id: str,
-                label: str, every_min: int, missing_why: str) -> dict:
+                label: str, every_min: int, missing_why: str, script: Optional[str] = None) -> dict:
     if tasks is None:
         return check(id, "guards", label, "unknown", "Scheduled tasks can only be read on the farm PC.")
     t = tasks.get(name)
@@ -215,8 +217,22 @@ def _task_check(sys: System, tasks: Optional[Dict[str, dict]], name: str, id: st
     elif result not in (0, None, 267009):  # 267009 = still running right now
         status = "warn"
         summary += f", and its last run ended with code {result}"
+    # Since 2.0 the watchdog and heartbeat run from this repo. A task still
+    # pointing at Boord's old copy keeps working only until a Boord release
+    # turns that copy into a forwarder - and a farm that never re-ran
+    # install.bat should hear about it here, not find out from silence.
+    action = t.get("Action")
+    if script and action and status == "ok" and ntpath.normcase(script) not in ntpath.normcase(action):
+        status = "warn"
+        summary += (f". It runs {_script_in(action) or 'a script'} instead of this monitor's {ntpath.basename(script)}"
+                    " - run install.bat in the monitor's folder once to move it")
     return check(id, "guards", label, status, summary + ("." if not summary.endswith(".") else ""),
-                 value=_short(age))
+                 [f"Runs: {action}"] if action else None, value=_short(age), age_s=int(age))
+
+
+def _script_in(action: str) -> Optional[str]:
+    m = re.search(r'-File\s+"?([^"]+?\.ps1)', action or "", re.IGNORECASE)
+    return m.group(1) if m else None
 
 
 # --- the apps ----------------------------------------------------------------
@@ -347,7 +363,8 @@ def tailscale_checks(sys: System, status: Optional[dict], err: str, group: str =
             status, summary = "warn", f"Expires {when}, in {int(days)} days. {KEY_FIX}"
         else:
             status, summary = "ok", f"Expires {when}, in {int(days)} days."
-        out.append(check("ts.key", group, "Tailscale key", status, summary, value=_days_value(days)))
+        out.append(check("ts.key", group, "Tailscale key", status, summary, value=_days_value(days),
+                         days_left=round(days, 2)))
     return out
 
 
@@ -443,20 +460,20 @@ def cert_check(sys: System, dnsname: str, port: int) -> dict:
                      f"Could not check the certificate on :{port}: {err}")
     days = (expiry - sys.now()).total_seconds() / 86400
     when = expiry.strftime("%Y-%m-%d")
-    value = _days_value(days)
+    value = {"value": _days_value(days), "days_left": round(days, 2)}
     # Tailscale renews these on its own about a month ahead. One that gets
     # within a week of expiring means renewal is failing - usually because
     # the PC cannot reach Let's Encrypt - and the day it lapses every phone
     # refuses every app with a certificate error.
     if days < 0:
         return check("ts.cert", "tailscale", "HTTPS certificate", "fail",
-                     f"Expired on {when} - phones will refuse every app.", value=value)
+                     f"Expired on {when} - phones will refuse every app.", **value)
     if days < 7:
         return check("ts.cert", "tailscale", "HTTPS certificate", "warn",
                      f"Expires {when}, in {int(days)} days, and Tailscale has not renewed it.",
-                     value=value)
+                     **value)
     return check("ts.cert", "tailscale", "HTTPS certificate", "ok",
-                 f"Valid until {when} ({int(days)} days).", value=value)
+                 f"Valid until {when} ({int(days)} days).", **value)
 
 
 # --- the PC ------------------------------------------------------------------
@@ -469,7 +486,8 @@ def pc_checks(sys: System) -> List[dict]:
         pct = free * 100 / total if total else 0
         drive = os.path.splitdrive(os.path.abspath(path))[0] or "/"
         # `pct` is what the dashboard draws as a bar: how full, not how free.
-        meter = {"pct": round(100 - pct), "value": f"{free / 1024 ** 3:.0f} GB free"}
+        meter = {"pct": round(100 - pct), "value": f"{free / 1024 ** 3:.0f} GB free",
+                 "bytes_free": free, "bytes_total": total}
         summary = f"{_gb(free)} free of {_gb(total)} on {drive} ({pct:.0f}%)."
         # SQLite needs room to write its journal and the nightly backups need
         # room to land. A full disk does not crash the apps politely: writes
@@ -491,7 +509,7 @@ def pc_checks(sys: System) -> List[dict]:
         status = "warn" if used > 92 else "ok"
         out.append(check("pc.memory", "pc", "Memory", status,
                          f"{used:.0f}% in use ({_gb(avail)} free of {_gb(total)}).",
-                         pct=round(used), value=f"{used:.0f}% used"))
+                         pct=round(used), value=f"{used:.0f}% used", bytes_free=avail, bytes_total=total))
 
     up = sys.uptime_s()
     if up is not None:
@@ -504,7 +522,7 @@ def pc_checks(sys: System) -> List[dict]:
         out.append(check("pc.uptime", "pc", "Running since", status,
                          f"Up {_ago(up)} (booted {boot.strftime('%Y-%m-%d %H:%M')} UTC)."
                          + (" It restarted recently." if status == "warn" else ""), alert=False,
-                         value=_short(up)))
+                         value=_short(up), uptime_s=int(up)))
     return out
 
 
@@ -552,14 +570,15 @@ _LOG_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})  (.*)$")
 
 
 def watchdog_log_check(sys: System) -> dict:
-    """What the watchdog has done in the last day, from Boord's
-    data\\watchdog.log. Its timestamps are the PC's local time (it writes
-    Get-Date), so they are compared with local time here."""
-    path = os.path.join(config.BOORD_DIR, "data", "watchdog.log")
-    text = sys.read_tail(path)
+    """What the watchdog has done in the last day, from data\\watchdog.log
+    (in this repo since 2.0; Boord's before). Its timestamps are the PC's
+    local time (it writes Get-Date), so they are compared with local time
+    here."""
+    text = sys.read_tail(config.WATCHDOG_LOG)
     if text is None:
         return check("guards.log", "guards", "Watchdog log", "unknown",
-                     "No data\\watchdog.log in Boord's folder yet.", alert=False)
+                     "No data\\watchdog.log in the monitor's folder yet - the watchdog has not run from here.",
+                     alert=False)
     now_local = dt.datetime.now()
     recent, restarts, trouble = [], [], []
     for line in text.splitlines():
@@ -691,7 +710,7 @@ def drive_checks(sys: System) -> List[dict]:
                        f"expected at least every {limit:g} days.")
         else:
             status, summary = "ok", f"Newest backup {_ago(age)} ago: {file_name}."
-        out.append(check(cid, "backups", name, status, summary, [folder], value=_short(age)))
+        out.append(check(cid, "backups", name, status, summary, [folder], value=_short(age), age_s=int(age)))
     return out
 
 
@@ -905,9 +924,12 @@ def farm_checks(sys: System) -> List[dict]:
         out.append(cert_check(sys, dnsname, first))
     out.extend(pc_checks(sys))
     out.append(_task_check(sys, tasks, apps.WATCHDOG_TASK, "guards.watchdog", "Watchdog", 5,
-                           "Nothing restarts an app that crashes - run Boord's setup_watchdog.bat."))
+                           "Nothing restarts an app that crashes - run install.bat in the monitor's folder.",
+                           script=config.WATCHDOG_PS1))
     out.append(_task_check(sys, tasks, apps.HEARTBEAT_TASK, "guards.heartbeat", "Heartbeat", 10,
-                           "No email reaches anyone when this PC is off - run Boord's setup_heartbeat.bat."))
+                           "No email reaches anyone when this PC is off - put the healthchecks.io ping URLs in "
+                           "data\\heartbeat_url.txt and run setup_heartbeat.bat in the monitor's folder.",
+                           script=config.HEARTBEAT_PS1))
     out.append(watchdog_log_check(sys))
     update = update_check(sys)
     if update:

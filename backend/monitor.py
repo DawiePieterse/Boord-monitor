@@ -14,6 +14,18 @@ What has been alerted is saved to data/state.json. Without it, restarting
 the monitor would forget that the phone was already told, and every update
 would re-send every standing problem.
 
+Since 2.0 every alert is also an incident (store.py), the way paging tools
+work: it opens with the alert, can be acknowledged from the dashboard -
+which stops the reminders, nothing else - and resolves itself on recovery,
+with a timeline of what happened in between. A fail that never pages (its
+check has `alert` false) still opens one, so the record is complete; it just
+wakes nobody. A silence (a maintenance window) holds back the push for the
+checks it matches; if the check is still failing when the silence ends, the
+phone is told then, as Alertmanager does.
+
+Every run's results are also kept in the history (store.record), which is
+where the uptime bars, the SLOs and the latency percentiles come from.
+
 Besides the alerts, one summary a day (config.DAILY_AT), so that a silent
 phone can be trusted to mean a quiet farm.
 """
@@ -28,6 +40,7 @@ from typing import Dict, List, Optional
 import checks
 import config
 import push
+import store
 from system import System
 
 log = logging.getLogger("monitor")
@@ -43,6 +56,13 @@ _last_farm: Optional[dict] = None
 _last_bundle = 0.0
 _daily_last = ""  # the farm PC's local date the morning summary last went out
 _run_lock = threading.Lock()
+
+# Counters since this process started, for /metrics. Prometheus works out
+# rates from counters itself, so they only ever go up.
+stats = {"runs": 0, "run_errors": 0, "last_run_s": 0.0, "last_run_at": 0.0,
+         "pushes": 0, "push_failures": 0}
+# Per app: cumulative latency histogram counts and sum, Prometheus-style.
+latency_hist: Dict[str, dict] = {}
 
 # How late the morning summary may still go out. A monitor that was down at
 # 06:00 and back at 09:00 still sends it - "all good" at 09:00 is still
@@ -74,10 +94,14 @@ def _save_state() -> None:
 
 
 def reset() -> None:
-    """Tests only: forget everything."""
+    """Tests only: forget everything held in memory. data/ is left alone,
+    so this is also what a restart of the monitor looks like."""
     global latest, _streaks, _events, _last_farm, _last_bundle, _daily_last
     latest, _streaks, _events, _last_farm, _last_bundle = {}, {}, [], None, 0.0
     _daily_last = ""
+    for k in stats:
+        stats[k] = 0
+    latency_hist.clear()
 
 
 def _stamp(t: dt.datetime) -> str:
@@ -98,31 +122,63 @@ def _alert_url() -> str:
     return "/"
 
 
-def evaluate(results: List[dict], now: dt.datetime) -> dict:
-    """Update the streaks from one run's results. Returns what to push:
-    {"new": [...], "remind": [...], "recovered": [...]}. Also records an
-    event for every status change, alerting or not, for the dashboard."""
+def _silenced(c: dict, active: List[dict]) -> Optional[dict]:
+    return next((x for x in active if store.matches(x["match"], c)), None)
+
+
+def evaluate(results: List[dict], now: dt.datetime, silences: Optional[List[dict]] = None) -> dict:
+    """Update the streaks and incidents from one run's results. Returns what
+    to push: {"new": [...], "remind": [...], "recovered": [...]}. Also
+    records an event for every status change, alerting or not, for the
+    dashboard."""
     new, remind, recovered = [], [], []
+    t = store.ts(now)
+    silences = silences or []
     for c in results:
         s = _streaks.get(c["id"]) or {"status": None, "fails": 0, "alerted": False, "last_alert": None}
         if s["status"] is not None and s["status"] != c["status"]:
             _events.append({"at": _stamp(now), "id": c["id"], "label": c["label"],
                             "from": s["status"], "to": c["status"], "summary": c["summary"]})
+        prev_status = s["status"]
         s["status"] = c["status"]
-        if c["status"] == "fail" and c.get("alert", True):
+        if c["status"] == "fail":
             s["fails"] += 1
-            if not s["alerted"] and s["fails"] >= config.FAIL_AFTER:
-                s["alerted"], s["last_alert"] = True, _stamp(now)
-                new.append(c)
-            elif s["alerted"] and s["last_alert"]:
-                last = dt.datetime.fromisoformat(s["last_alert"])
-                if (now - last).total_seconds() >= config.REMIND_EVERY_S:
-                    s["last_alert"] = _stamp(now)
-                    remind.append(c)
+            if s["fails"] == 1 or not s.get("started"):
+                s["started"] = t
+            # A streak carried over from before 2.0 has no incident yet: it
+            # gets one now, without telling the phone a second time.
+            if s["fails"] >= config.FAIL_AFTER and not s.get("incident"):
+                s["incident"] = store.open_incident(c, s["started"], t)
+            if s.get("incident"):
+                if prev_status == "fail" and s.get("summary") and s["summary"] != c["summary"]:
+                    store.add_event(s["incident"], t, "update", c["summary"], summary=c["summary"])
+                silence = _silenced(c, silences)
+                pageable = c.get("alert", True) and silence is None
+                if pageable and not s["alerted"]:
+                    s["alerted"], s["last_alert"] = True, _stamp(now)
+                    new.append(c)
+                    store.add_event(s["incident"], t, "notified", "Phones told.")
+                elif pageable and s["last_alert"]:
+                    last = dt.datetime.fromisoformat(s["last_alert"])
+                    if (now - last).total_seconds() >= config.REMIND_EVERY_S:
+                        # Acknowledged means someone is on it: no more
+                        # reminders, but it stays open until it is fixed.
+                        if store.incident_state(s["incident"]) == "open":
+                            s["last_alert"] = _stamp(now)
+                            remind.append(c)
+                            store.add_event(s["incident"], t, "notified", "Reminder sent: still failing.")
+                elif silence is not None and not s.get("silence_noted"):
+                    s["silence_noted"] = True
+                    store.add_event(s["incident"], t, "silenced",
+                                    f"No push: silenced until {silence['ends_at']} UTC ({silence['reason']}).")
+            s["summary"] = c["summary"]
         else:
+            if s.get("incident"):
+                store.resolve(s["incident"], t, f"Recovered: {c['summary']}")
             if s["alerted"]:
                 recovered.append(c)
-            s["fails"], s["alerted"], s["last_alert"] = 0, False, None
+            s.update({"fails": 0, "alerted": False, "last_alert": None, "incident": None,
+                      "started": None, "summary": None, "silence_noted": False})
         _streaks[c["id"]] = s
     del _events[:-MAX_EVENTS]
     return {"new": new, "remind": remind, "recovered": recovered}
@@ -164,7 +220,7 @@ def _daily_due(local: dt.datetime) -> bool:
             and 0 <= (local - start).total_seconds() < DAILY_LATE_S)
 
 
-def compose_daily(results: List[dict]) -> tuple:
+def compose_daily(results: List[dict], incidents: Optional[List[dict]] = None) -> tuple:
     """(title, body) of the morning summary. Short lines, most important
     first: a lock screen shows three or four of them."""
     fails = [c for c in results if c["status"] == "fail"]
@@ -203,6 +259,9 @@ def compose_daily(results: List[dict]) -> tuple:
     update = next((c for c in results if c["id"] == "guards.update"), None)
     if update and update["status"] == "warn":
         lines.append("Windows wants to restart the PC")
+    if incidents:
+        acked = sum(1 for i in incidents if i["state"] == "acknowledged")
+        lines.append(f"Open incidents: {len(incidents)}" + (f" ({acked} acknowledged)" if acked else ""))
     return title, "\n".join(lines)
 
 
@@ -234,6 +293,7 @@ def run_once(sys: System) -> dict:
     not run the PowerShell queries twice at once."""
     global latest, _last_farm
     with _run_lock:
+        started = time.monotonic()
         now = sys.now()
         farm = None
         if config.ROLE == "farm":
@@ -243,10 +303,20 @@ def run_once(sys: System) -> dict:
             if farm is not None:
                 _last_farm = farm
                 _refresh_bundle(sys)
+        t = store.ts(now)
+        try:
+            store.record(results, t)
+        except Exception:  # noqa: BLE001 - history is a nice-to-have; alerts are not
+            log.exception("could not record history")
+        _count_latency(results)
         with _lock:
             if not _streaks and not _events:
                 _load_state()
-            decision = evaluate(results, now)
+            try:
+                active_silences = store.silences(t)
+            except Exception:  # noqa: BLE001
+                active_silences = []
+            decision = evaluate(results, now, active_silences)
             # The number on the Home Screen icon: problems a phone has been
             # told about and that are still broken. The same rule as the
             # pushes, so the badge never counts a warning or a fail still
@@ -255,7 +325,10 @@ def run_once(sys: System) -> dict:
             snapshot = {"role": config.ROLE, "checked_at": _stamp(now),
                         "overall": checks.worst(results), "groups": checks.GROUPS[config.ROLE],
                         "alerting": alerting, "checks": results,
-                        "events": list(reversed(_events[-50:]))}
+                        "events": list(reversed(_events[-50:])),
+                        "incidents": _safe(lambda: store.incidents(active_only=True), []),
+                        "silences": active_silences,
+                        "interval_s": config.CHECK_INTERVAL_S}
             if config.ROLE == "remote":
                 snapshot["farm"] = _last_farm
                 snapshot["farm_url"] = config.FARM_URL or None
@@ -264,9 +337,12 @@ def run_once(sys: System) -> dict:
             if _daily_due(local):
                 global _daily_last
                 _daily_last = local.date().isoformat()
-                daily = compose_daily(results)
+                daily = compose_daily(results, snapshot["incidents"])
             latest = snapshot
             _save_state()
+        stats["runs"] += 1
+        stats["last_run_s"] = time.monotonic() - started
+        stats["last_run_at"] = time.time()
     if daily:
         try:
             result = push.send(daily[0], daily[1], url=_alert_url(), tag="daily", badge=alerting)
@@ -276,10 +352,32 @@ def run_once(sys: System) -> dict:
     for title, body, tag in compose(decision):
         try:
             result = push.send(title, body, url=_alert_url(), tag=tag, badge=alerting)
+            stats["pushes"] += result.get("sent", 0)
+            stats["push_failures"] += result.get("failed", 0)
             log.info("pushed %r: %s", title, result)
         except Exception as e:  # noqa: BLE001 - never let a push kill the loop
+            stats["push_failures"] += 1
             log.warning("push %r failed: %s", title, e)
     return snapshot
+
+
+def _safe(fn, default):
+    try:
+        return fn()
+    except Exception:  # noqa: BLE001 - a broken history file must not blank the dashboard
+        log.exception("history read failed")
+        return default
+
+
+def _count_latency(results: List[dict]) -> None:
+    for c in results:
+        if c.get("group") != "apps" or not isinstance(c.get("local_ms"), int):
+            continue
+        h = latency_hist.setdefault(c["app"], {"buckets": [0] * (len(store.BUCKETS_MS) + 1),
+                                               "sum_ms": 0, "count": 0})
+        h["buckets"][store._bucket(c["local_ms"])] += 1
+        h["sum_ms"] += c["local_ms"]
+        h["count"] += 1
 
 
 def _loop() -> None:
@@ -288,6 +386,7 @@ def _loop() -> None:
         try:
             run_once(sys)
         except Exception:  # noqa: BLE001 - the loop is the product; it must survive
+            stats["run_errors"] += 1
             log.exception("check run failed")
         time.sleep(config.CHECK_INTERVAL_S)
 

@@ -17,6 +17,12 @@ param(
     [int]$Port = 8050,
     [string]$TaskName = "Boord Monitor Server",
     [int]$TimeoutSeconds = 20,
+    # Which project's server this is stopping. Defaults to this repo, which is
+    # every caller that lives beside this file - the updater and install.ps1.
+    # watchdog.ps1 passes another project's folder, because the "is this
+    # process ours?" check below is only as good as the virtual environment
+    # it compares against: given the monitor's venv and Boord Owner's
+    # uvicorn, the check correctly refuses, and Owner never restarts.
     [string]$RepoRoot = $PSScriptRoot
 )
 

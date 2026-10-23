@@ -66,9 +66,9 @@ def serve_for(mapping, funnel=()):
     return out
 
 
-GOOD_SERVE = {443: 8000, 8443: 8010, 9443: 8020, 8030: 8030, 8040: 8040, 8050: 8050}
+GOOD_SERVE = {443: 8000, 8443: 8010, 9443: 8020, 8030: 8030, 8040: 8040, 8050: 8050, 8060: 8060}
 ALL_TASKS = ["Boord Server", "Boord Owner Server", "Boord Notes Server", "Kudde Server",
-             "Boord Labour Server", "Boord Watchdog", "Boord Heartbeat"]
+             "Boord Labour Server", "Boord Packhouse Server", "Boord Watchdog", "Boord Heartbeat"]
 
 
 class FakeSystem:

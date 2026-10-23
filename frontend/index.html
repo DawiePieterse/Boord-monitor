@@ -10,16 +10,17 @@
   <meta name="apple-mobile-web-app-title" content="Monitor">
   <title>Boord Monitor</title>
   <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <!-- An iOS-style navigation bar: a large title, one button for the thing
-       people do most (check now), and everything else in one pull-down
-       menu behind "..." - so the screen itself is only the farm. -->
+  <!-- An iOS-style navigation bar: a large title that names the tab, one
+       button for the thing people do most (check now), and everything else
+       behind "...". -->
   <header class="nav">
     <div class="nav-titles">
-      <h1 class="nav-title">Monitor</h1>
+      <h1 class="nav-title" id="nav-title">Status</h1>
       <span id="role" class="nav-sub"></span>
     </div>
     <div class="nav-actions">
@@ -33,18 +34,22 @@
     </div>
 
     <div id="menu" class="menu" role="menu" hidden>
-      <button id="history-btn" class="menu-item" type="button" role="menuitem">
-        <span>Recent changes</span>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
-      </button>
       <button id="alerts-btn" class="menu-item" type="button" role="menuitem">
         <span>Alerts on this phone <span id="alerts-state" class="menu-detail"></span></span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>
+      </button>
+      <button id="maint-btn" class="menu-item" type="button" role="menuitem">
+        <span>Maintenance window</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L4 17l3 3 5.3-5.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"/></svg>
       </button>
       <button id="account-btn" class="menu-item" type="button" role="menuitem">
         <span id="account-label">Sign in as admin</span>
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
       </button>
+      <a class="menu-item" href="/metrics" target="_blank" rel="noopener" role="menuitem">
+        <span>Metrics (Prometheus)</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16"/><path d="M7 16v-5"/><path d="M12 16V6"/><path d="M17 16v-8"/></svg>
+      </a>
       <div class="menu-foot">Boord Monitor <span id="version"></span></div>
     </div>
   </header>
@@ -55,26 +60,79 @@
   </div>
 
   <main>
-    <section id="banner" class="banner banner-unknown" aria-live="polite">
-      <div class="banner-row">
-        <span class="banner-icon" aria-hidden="true"></span>
-        <div class="banner-text">
-          <span class="banner-title" id="banner-title">Checking…</span>
-          <span class="banner-time" id="checked-at"></span>
-        </div>
-      </div>
-      <div id="banner-problems" class="banner-problems"></div>
-    </section>
-
     <div id="offline" class="notice" hidden>
       Can't reach the monitor - showing <span id="offline-since"></span>.
     </div>
 
-    <div id="groups" class="groups"></div>
+    <!-- Status: the status-page view. Overall state, what is broken now,
+         the headline numbers, and every component's 90 days. -->
+    <section id="view-status" class="view" data-title="Status">
+      <section id="banner" class="banner banner-unknown" aria-live="polite">
+        <div class="banner-row">
+          <span class="banner-icon" aria-hidden="true"></span>
+          <div class="banner-text">
+            <span class="banner-title" id="banner-title">Checking…</span>
+            <span class="banner-time" id="checked-at"></span>
+          </div>
+        </div>
+        <div id="banner-problems" class="banner-problems"></div>
+      </section>
+      <div id="active-incidents"></div>
+      <div id="active-silences"></div>
+      <div id="kpis" class="kpis"></div>
+      <div id="components"></div>
+    </section>
+
+    <!-- Services: one card per app, with its SLO, error budget, latency
+         percentiles and a 24-hour chart. -->
+    <section id="view-services" class="view" data-title="Services" hidden>
+      <p class="section-note" id="slo-note"></p>
+      <div id="services"></div>
+    </section>
+
+    <!-- Incidents: measures, maintenance windows, the incident log and the
+         raw status changes. -->
+    <section id="view-incidents" class="view" data-title="Incidents" hidden>
+      <div class="segmented" role="tablist" id="stat-window">
+        <button type="button" role="tab" data-w="7d">7 days</button>
+        <button type="button" role="tab" data-w="30d" aria-selected="true">30 days</button>
+        <button type="button" role="tab" data-w="90d">90 days</button>
+      </div>
+      <div id="incident-stats" class="kpis"></div>
+      <div id="silence-list"></div>
+      <div id="incident-list"></div>
+      <div id="change-list"></div>
+    </section>
+
+    <!-- Checks: every check as a tile, grouped - the glance view. -->
+    <section id="view-checks" class="view" data-title="Checks" hidden>
+      <div id="groups" class="groups"></div>
+    </section>
   </main>
 
-  <!-- One bottom sheet for everything: a check's full story, the history,
-       the alert settings. Built in app.js each time. -->
+  <nav class="tabbar" aria-label="Sections">
+    <a href="#status" class="tab" data-view="status">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>
+      <span>Status</span>
+    </a>
+    <a href="#services" class="tab" data-view="services">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="6" rx="1.5"/><rect x="3" y="14" width="18" height="6" rx="1.5"/><circle class="fill" cx="7" cy="7" r="1"/><circle class="fill" cx="7" cy="17" r="1"/></svg>
+      <span>Services</span>
+    </a>
+    <a href="#incidents" class="tab" data-view="incidents">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2.5 20h19z"/><path d="M12 10v4"/><circle class="fill" cx="12" cy="17" r="1"/></svg>
+      <span>Incidents</span>
+      <span id="incident-badge" class="tab-badge" hidden></span>
+    </a>
+    <a href="#checks" class="tab" data-view="checks">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+      <span>Checks</span>
+    </a>
+  </nav>
+
+  <!-- One bottom sheet for everything: a check's full story, an incident's
+       timeline, the alert settings, the maintenance form. Built in app.js
+       each time. -->
   <dialog id="sheet" class="sheet">
     <div class="sheet-head">
       <span class="grabber" aria-hidden="true"></span>
@@ -86,7 +144,7 @@
   <dialog id="pin-dialog" class="alert-dialog">
     <form method="dialog" id="pin-form">
       <h2>Admin PIN</h2>
-      <p class="muted small">Needed to restart an app or turn on alerts.</p>
+      <p class="muted small">Needed to restart an app, acknowledge an incident, set a maintenance window or turn on alerts.</p>
       <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" required minlength="4">
       <p id="pin-error" class="error small" hidden></p>
       <div class="alert-actions">
@@ -107,6 +165,7 @@
   </dialog>
 
   <script src="api.js"></script>
+  <script src="charts.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

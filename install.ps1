@@ -2,13 +2,14 @@
 #
 # Sets up the monitor to run beside the other Boord apps on the same PC:
 # installs Python if needed, creates the virtual environment, installs
-# dependencies, finds Boord's folder (for its watchdog), sets the admin PIN,
-# writes the launcher and registers the monitor to auto-start at boot as
-# SYSTEM. Safe to re-run - each step checks what is already done.
+# dependencies, finds Boord's folder (for its database), sets the admin PIN,
+# writes the launcher, registers the monitor to auto-start at boot as SYSTEM,
+# and registers the watchdog and heartbeat tasks to run from this folder.
+# Safe to re-run - each step checks what is already done.
 #
 # SYSTEM, like its siblings, and for a reason of its own: the restart button
-# runs Boord's watchdog.ps1, which ends and starts other SYSTEM tasks and
-# stops their processes. An ordinary account could look but not act.
+# runs watchdog.ps1, which ends and starts other SYSTEM tasks and stops their
+# processes. An ordinary account could look but not act.
 #
 # Run via install.bat, which handles the administrator-elevation prompt.
 
@@ -183,12 +184,14 @@ try {
     }
 
     # --- Step 3: Locate Boord's folder ---
-    # The monitor reads Boord's data\watchdog.log and runs its watchdog.ps1
-    # for the restart button. Read from the "Boord Server" task first, the
+    # The monitor reads Boord's data\boord.db (read-only) for when each tablet
+    # last sent a crate. Until 2.0 it also needed Boord's watchdog; now the
+    # folder is only for that, and for moving the old watchdog and heartbeat
+    # files across (step 9b). Read from the "Boord Server" task first, the
     # way watchdog.ps1 finds every app's folder, so an unusual checkout
-    # location is still found. Not fatal if it is missing: everything but the
-    # restart button and the watchdog log works without it.
-    Write-Step "Locating Boord's folder (for its watchdog)..."
+    # location is still found. Not fatal if it is missing: only the tablets'
+    # Boord detail goes without it.
+    Write-Step "Locating Boord's folder (for its database)..."
     $boordDir = $null
     try {
         $raw = cmd /c "schtasks /query /tn ""Boord Server"" /xml ONE 2>nul"
@@ -198,16 +201,17 @@ try {
             if ($cmdPath -and (Test-Path $cmdPath)) { $boordDir = Split-Path -Parent $cmdPath }
         }
     } catch { }
-    if (-not $boordDir -and (Test-Path (Join-Path $DefaultBoordDir "watchdog.ps1"))) {
+    $boordMarker = "data\boord.db"
+    if (-not $boordDir -and (Test-Path (Join-Path $DefaultBoordDir $boordMarker))) {
         $boordDir = (Resolve-Path $DefaultBoordDir).Path
     }
-    if ($boordDir -and (Test-Path (Join-Path $boordDir "watchdog.ps1"))) {
+    if ($boordDir -and (Test-Path (Join-Path $boordDir $boordMarker))) {
         Write-Ok "Found it at $boordDir"
     } else {
         Write-Warn "Could not find Boord's folder. The monitor will still watch every app,"
-        Write-Warn "but the Restart button and the watchdog log need it."
+        Write-Warn "but the tablets' tiles go without when each last sent a crate."
         $entered = Read-Host "Full path to Boord's folder (e.g. C:\Boord), or Enter to skip"
-        if ($entered -and (Test-Path (Join-Path $entered "watchdog.ps1"))) {
+        if ($entered -and (Test-Path (Join-Path $entered $boordMarker))) {
             $boordDir = (Resolve-Path $entered).Path
         } else {
             $boordDir = $DefaultBoordDir
@@ -397,6 +401,64 @@ goto loop
         Write-Warn "The server did not answer on port $Port within 20 seconds."
         Write-Warn "Why is in $DataDir\server.log. The launcher keeps retrying"
         Write-Warn "every 15 seconds, so it may still come up on its own."
+    }
+
+    # --- Step 9b: The watchdog and the heartbeat ---
+    #
+    # Both lived in Boord's repo until Monitor 2.0 and now run from this
+    # folder, reading the one app table (apps.json). Registering them here,
+    # rather than leaving it to the setup_*.bat files, is what moves an
+    # existing farm across: re-running this installer re-points the existing
+    # "Boord Watchdog" and "Boord Heartbeat" tasks at this folder. They keep
+    # their names, so the monitor's own checks of them carry on.
+    #
+    # Through Start-Process with one pre-quoted argument string: schtasks
+    # needs the inner quotes around the script path as \", and PowerShell's
+    # own handling of quotes in native arguments differs between 5.1 and 7.
+    # A single string is passed to the program exactly as written by both.
+    Write-Step "Registering the watchdog and the heartbeat (they run from this folder)..."
+    function Register-ScriptTask($name, $script, $minutes) {
+        $tr = "powershell -NoProfile -ExecutionPolicy Bypass -File \`"$script\`""
+        $argLine = "/create /tn `"$name`" /tr `"$tr`" /sc minute /mo $minutes /ru SYSTEM /rl highest /f"
+        $p = Start-Process -FilePath "schtasks.exe" -ArgumentList $argLine -Wait -NoNewWindow -PassThru
+        return ($p.ExitCode -eq 0)
+    }
+
+    # Carry over what Boord's copies kept: the ping URLs (a credential, so
+    # into data\ here, which git ignores) and the watchdog's log, so the
+    # dashboard's "restarted in the last 24 h" doesn't reset to nothing.
+    # Copied, never moved: Boord's own files stay until a Boord release
+    # retires them, and a copy that already exists here is never replaced.
+    New-Item -ItemType Directory -Path $DataDir -Force | Out-Null
+    $urlFile = Join-Path $DataDir "heartbeat_url.txt"
+    if ($boordDir) {
+        $moves = @(
+            @{ From = Join-Path $boordDir "heartbeat_url.txt"; To = $urlFile; What = "the heartbeat's ping URLs" },
+            @{ From = Join-Path $boordDir "data\watchdog.log"; To = Join-Path $DataDir "watchdog.log"; What = "the watchdog's log" }
+        )
+        foreach ($m in $moves) {
+            if ((Test-Path $m.From) -and -not (Test-Path $m.To)) {
+                Copy-Item -Path $m.From -Destination $m.To
+                Write-Ok "Copied $($m.What) from Boord's folder"
+            }
+        }
+    }
+
+    if (Register-ScriptTask "Boord Watchdog" (Join-Path $RepoRoot "watchdog.ps1") 5) {
+        Write-Ok "'Boord Watchdog' runs this folder's watchdog.ps1 every 5 minutes"
+    } else {
+        Write-Warn "Could not register 'Boord Watchdog'. Run setup_watchdog.bat in this folder."
+    }
+    if (Test-Path $urlFile) {
+        if (Register-ScriptTask "Boord Heartbeat" (Join-Path $RepoRoot "heartbeat.ps1") 10) {
+            Write-Ok "'Boord Heartbeat' runs this folder's heartbeat.ps1 every 10 minutes"
+            & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot "heartbeat.ps1") -DryRun
+        } else {
+            Write-Warn "Could not register 'Boord Heartbeat'. Run setup_heartbeat.bat in this folder."
+        }
+    } else {
+        Write-Warn "No data\heartbeat_url.txt, so the heartbeat is not set up: nobody is"
+        Write-Warn "emailed when this PC is off. MANUAL.md, 'The heartbeat', explains it."
     }
 
     # --- Step 10: Report the address and how to publish it ---

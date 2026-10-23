@@ -4,13 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Boord Monitor watches the farm PC: the five sibling apps (Boord 8000, Owner 8010, Notes 8020, Kudde 8030, Labour 8040), Tailscale (connection, node key expiry, `tailscale serve` mapping, certificate), the PC itself (disk, memory, uptime), and Boord's watchdog and heartbeat tasks. It shows a dashboard PWA, sends Web Push alerts, and has a PIN-protected Restart button. `MANUAL.md` is the user and admin manual.
+Boord Monitor watches the farm PC: the six sibling apps (Boord 8000, Owner 8010, Notes 8020, Kudde 8030, Labour 8040, Packhouse 8060), Tailscale (connection, node key expiry, `tailscale serve` mapping, certificate), the PC itself (disk, memory, uptime), and the watchdog and heartbeat tasks - which, since 2.0, run scripts from this repo. It shows a status-page dashboard PWA with uptime history, per-app SLOs and an incident log, sends Web Push alerts, exposes Prometheus `/metrics`, and has a PIN-protected Restart button. `MANUAL.md` is the user and admin manual.
 
-It shares no database or code with the siblings. It does call into Boord's repo: it reads Boord's `data/watchdog.log` and runs Boord's `watchdog.ps1 -Restart "<Name>"` (`MONITOR_BOORD_DIR`).
+It shares no code with the siblings. It reads Boord's `data/boord.db` read-only for the device tiles (`MONITOR_BOORD_DIR`).
 
 ## The Boord suite
 
-This app is one of six that run together on the farm PC (`bekfontein-server`), each its own repo, process, port and database. They are reached only over Tailscale, and each binds `127.0.0.1` and is published with `tailscale serve`. The same section is in every app's `CLAUDE.md`. When a fact here changes, change it in all six.
+This app is one of seven that run together on the farm PC (`bekfontein-server`), each its own repo, process, port and database. They are reached only over Tailscale, and each binds `127.0.0.1` and is published with `tailscale serve`. The same section is in every app's `CLAUDE.md`. When a fact here changes, change it in all seven.
 
 | App | Repo (`DawiePieterse/…`) | What it does | Port | Tailnet address | Mac folder | Farm PC folder |
 |---|---|---|---|---|---|---|
@@ -19,18 +19,19 @@ This app is one of six that run together on the farm PC (`bekfontein-server`), e
 | Boord Notes | `boord-notes` | Private farm notebook for Andre and his son, offline-first, optional AI. | 8020 | `https://bekfontein-server.taile32cb0.ts.net:9443/` | `~/Documents/Projects/BoordNotes` | `C:\bekfontein-farm-notebook` |
 | Kudde | `Kudde` | Cattle records: animals and their events. | 8030 | `https://bekfontein-server.taile32cb0.ts.net:8030/` | `~/Documents/Projects/Kudde` | `C:\Kudde` |
 | Boord Labour | `Boord-labour` | Packhouse time clock: badge scans at the door, hourly pay with overtime. | 8040 | `https://bekfontein-server.taile32cb0.ts.net:8040/` | `~/Documents/Projects/Boord-labour` | `C:\Boord-labour` |
-| **Boord Monitor** (this app) | `Boord-monitor` | Watches the PC and the other five apps; Web Push alerts and a Restart button. | 8050 | `https://bekfontein-server.taile32cb0.ts.net:8050/` | `~/Documents/Projects/Boord-monitor` | `C:\boord-monitor` |
+| **Boord Monitor** (this app) | `Boord-monitor` | Watches the PC and the other apps: status page, SLOs, incidents, Web Push alerts, a Restart button; runs the watchdog and heartbeat. | 8050 | `https://bekfontein-server.taile32cb0.ts.net:8050/` | `~/Documents/Projects/Boord-monitor` | `C:\boord-monitor` |
+| Boord Packhouse | `boord-packhouse` | After receiving to the truck: sulfur, acid, lines, pre-pack, cold store and PPECB, dispatch. | 8060 | `https://bekfontein-server.taile32cb0.ts.net:8060/` | `~/Documents/Projects/Boord-packhouse` | `C:\Boord-packhouse` |
 
 **How they depend on each other:**
-- **Boord is the hub.** Its `data/boord.db` is opened read-only by Owner (harvest, lots, blocks, suppliers), Labour (the worker register, and Boord's `data/photos` for faces) and Monitor (tablet station, last sync and outbox).
+- **Boord is the hub.** Its `data/boord.db` is opened read-only by Owner (harvest, lots, blocks, suppliers), Labour (the worker register, and Boord's `data/photos` for faces), Monitor (tablet station, last sync and outbox) and, once its modules land, Packhouse (received lots, blocks, suppliers, workers).
   - Boord is that database's only writer and migrates it at startup.
-  - Owner and Labour refuse to boot if a column they read disappears. A Boord migration that drops or renames a column needs those apps updated in step.
-- **Labour's badges are Boord's.** The badge QR holds exactly `worker.id` (`Boord/frontend/admin/print-badge.html`), and Labour vendors Boord's `frontend/shared/`.
+  - Owner, Labour and Packhouse refuse to boot if a column they read disappears. A Boord migration that drops or renames a column needs those apps updated in step.
+- **Labour's badges are Boord's.** The badge QR holds exactly `worker.id` (`Boord/frontend/admin/print-badge.html`), and Labour and Packhouse vendor Boord's `frontend/shared/`.
 - **Owner asks Notes.** The "Ask the farm notes" bridge calls Notes' `/api/ai/ask` at `OWNER_NOTES_URL` (`http://127.0.0.1:8020`) and can share Notes' `data/anthropic_key.txt`.
-- **Boord keeps the others running.** Boord's `watchdog.ps1` (restarts an app that stops answering) and `heartbeat.ps1` cover all six.
-  - Their app table (name, port, task, health path) must match Monitor's `backend/apps.py` and the port table above. Change them together.
-  - Monitor reads Boord's `data/watchdog.log`, and its Restart button runs Boord's `watchdog.ps1 -Restart "<Name>"`.
-- **Monitor watches everything.** It shows each app's up/down state and `/api/version`, Tailscale and the PC, and pushes an alert after three failed checks in a row.
+- **Monitor keeps the others running.** Since Monitor 2.0 its `watchdog.ps1` (restarts an app that stops answering) and `heartbeat.ps1` (pings healthchecks.io) cover all seven, as the scheduled tasks "Boord Watchdog" and "Boord Heartbeat". Until then they lived in Boord's repo; Boord's copies are now forwarders to Monitor's.
+  - **The app table is Monitor's `apps.json`, the one copy.** Monitor's `backend/apps.py`, `watchdog.ps1` and `heartbeat.ps1` all read it. Adding or moving an app is one line there plus the port table above; the `tailscale serve` ports are also in Boord's MANUAL.md.
+  - The watchdog stands down while any app's updater (its `updater` in `apps.json`) or an installer runs, and its `-Restart "<Name>"` is what Monitor's Restart button runs. It exits 2 when it stands down.
+- **Monitor watches everything.** It shows each app's up/down state and `/api/version`, Tailscale and the PC, keeps uptime history, SLOs and incidents, and pushes an alert after three failed checks in a row.
   - Every app's `/api/version` keeps the same field names (`tag`, `state`, `frontend_version`), because Monitor and the heartbeat read them all.
   - An off-site copy of the monitor on the owner's Mac alerts when the whole farm PC is unreachable.
 - **Kudde and Notes stand alone.** No other app reads their data. They are only watched and restarted.
@@ -53,7 +54,7 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/python -m pytest tests/test_checks.py -k serve -q         # one area
 MONITOR_DATA_DIR=/tmp/mon-dev .venv/bin/python -m uvicorn main:app --port 8050   # farm role, http://localhost:8050/
 MONITOR_ROLE=remote MONITOR_FARM_URL=http://127.0.0.1:8050 MONITOR_DATA_DIR=/tmp/mon-remote \
-  .venv/bin/python -m uvicorn main:app --port 8060                  # remote role against the above
+  .venv/bin/python -m uvicorn main:app --port 8070                  # remote role against the above
 node ../scripts/smoke_test.js                                       # headless Chromium, server must be running
 ../scripts/release.sh v1.1                                          # signed tag; VERSION in frontend/api.js must match
 ```
@@ -88,6 +89,11 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
 - **Tablet outbox** (Boord 3.17+): field tablets post their unsent count to Boord (`POST /api/devices/{id}/queue`, stored on Boord's `device` row). The monitor reads it from `boord.db` with the rest of the device detail. Warns past `QUEUE_WARN_S` (an hour), never alerts. An older Boord without the columns just shows no queue.
 - **Windows Update** (`checks.update_check`, the `guards.update` tile): a pending restart, read from the registry (`winreg`), plus the Update Orchestrator's next Reboot task. It warns and never alerts.
 - **Morning summary** (`monitor._daily_due` / `compose_daily`): one push a day at `MONITOR_DAILY_AT` (default 06:00, PC local time, `System.local_now`), at most `DAILY_LATE_S` late, farm role only. `daily_last` in `state.json` stops a restart from sending it twice. The tests turn it off (conftest), and `test_daily.py` turns it on.
+- **History** (`store.py`, `data/history.db`, SQLite WAL, stdlib only): every check every run for two days (`sample`), rolled up per hour with a latency histogram for 400 days (`hourly`), plus `incident`, `incident_event` and `silence`. `monitor.run_once` records each run; a failing history write is logged and never stops the alerts. Timestamps are Unix seconds inside, naive-UTC ISO outside.
+- **Incidents** follow the push rule exactly: one opens when a check reaches `FAIL_AFTER` fails (paged or not), resolves on the first non-fail, and keeps a timeline. **Acknowledge** (PIN) only stops the `REMIND_EVERY_S` reminders. **Silences** (maintenance windows, PIN, at most a week; `match` is `*`, `group:<key>` or a check id) hold back the push; a check still failing when the silence ends pushes then.
+- **SLOs** (`slo.py`): availability SLI = (ok+warn)/(ok+warn+fail) of the apps' checks, default 99.5% over 30 days and p95 < 1000 ms, overridable per app in `data/slo.txt`. Error budget, multiwindow burn rate (1 h, 6 h) and latency percentiles (exact from samples up to 48 h, histogram-interpolated beyond). Display only: SLOs never push.
+- **Standard endpoints:** `/metrics` (Prometheus text format, hand-written in `metrics.py`, `boord_` prefix, base units), `/healthz` (liveness) and `/readyz` (loop ran recently and history writable, else 503). `/api/overview` feeds the Status and Services tabs and is cached per check run.
+- **No new dependencies.** History, metrics and SLOs use only the standard library, so the updater's import list still equals `requirements.txt`.
 - **Up/down follows watchdog.ps1's rule:** any HTTP answer, even 500, means up. A 500 is a warning. `/api/version` is read for info only, never for up/down.
 - **Installed = scheduled task registered** (Windows). An app whose task is absent is `off`, not down, and is not expected in the serve table. Off Windows, `query_tasks` returns None and every app is checked.
 - **Scheduled tasks are read with `Get-ScheduledTaskInfo` → JSON,** not `schtasks /v`, whose labels follow the PC's display language.
@@ -95,21 +101,26 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
   - The farm makes the VAPID key and stores the phones' subscriptions.
   - The remote copies both hourly from `GET /api/remote/bundle` (`X-Monitor-Token`, the farm's `data/remote_token.txt`), so it can alert the same phones when the farm is down.
   - Subscriptions are tied to the key, not the origin.
-- **Restart never reimplements stopping a server.** `restart.py` runs Boord's `watchdog.ps1 -Restart`. That stands down during updates and installs (exit 2), uses `stop_server.ps1`, and waits for the app to answer.
+- **The watchdog and heartbeat are this repo's** (`watchdog.ps1`, `heartbeat.ps1`, `setup_*.bat`; moved from Boord in 2.0). They stay separate scheduled tasks ("Boord Watchdog", "Boord Heartbeat"), never part of the server process: a crashed monitor must not also stop the restarts, and the watchdog is what restarts the monitor.
+  - **`apps.json` is the one app table.** `apps.py`, `watchdog.ps1` and `heartbeat.ps1` read it; `tests/test_apps_table.py` fails if a script grows its own table again. The watchdog's maintenance markers come from each app's `updater`.
+  - Their files are in `data\`: `watchdog.log` (read by `guards.log`), `watchdog.pause`, `heartbeat_url.txt` (a credential).
+  - `install.ps1` registers both tasks here (the heartbeat only once `data\heartbeat_url.txt` exists), copying Boord's old `heartbeat_url.txt` and `watchdog.log` across once. `_TASKS_PS` reads each task's action, and `guards.watchdog`/`guards.heartbeat` warn while a task still runs another folder's script.
+  - Boord keeps forwarders under the old names for farms not yet re-pointed, so this repo's release goes first.
+- **Restart never reimplements stopping a server.** `restart.py` runs this repo's `watchdog.ps1 -Restart`. That stands down during updates and installs (exit 2), uses `stop_server.ps1`, and waits for the app to answer.
 - **Access:**
   - Reading is open to the tailnet, like every sibling.
-  - Restart, push subscribe and push test need the admin PIN (`admin_auth.py`, copied from Boord Labour; cookie `monitor_admin`, set only via `set_pin.py`).
+  - Restart, push subscribe, push test, incident acknowledge and silences need the admin PIN (`admin_auth.py`, copied from Boord Labour; cookie `monitor_admin`, set only via `set_pin.py`).
   - Unsubscribe needs no PIN.
   - Never bind 0.0.0.0.
 
 ## Keep in step with the siblings
 
-- **The app table** (`apps.py`) is also in Boord's `watchdog.ps1` and `heartbeat.ps1`, and the serve ports are in Boord's MANUAL.md. Change all of them together.
+- **The app table** is `apps.json` here. The serve ports are also in Boord's MANUAL.md and the port table in every `CLAUDE.md`. Change them together.
 - **Frontend changes need two bumps:** `VERSION` in `frontend/api.js` and `CACHE` in `frontend/service-worker.js`.
 - **Plain JS and CSS, no build step, no CDNs.** The phones are tailnet-only.
-- **The dashboard is one phone screen** (390 x 844). Each check is a tile showing its dot, a short name (`short`, from `SHORT` in `checks.py`) and `value`, an optional field of at most about six characters. A check with `pct` is drawn as a bar. The full sentence and detail open in a sheet.
-  - **Fitting is measured, not hand-tuned:** `fitScreen()` in `app.js` runs after each draw and when the header or status card changes size. It adds `body.dense`, then `body.densest` (devices as dots), until the page fits. Don't let anything change height after `render()` without being watched; that is why `.nav-sub` reserves its line.
-  - **The smoke test** fails if the phone layout needs scrolling, both against the live server and in the `phone-busy` pass. That pass answers `/api/status` from `scripts/fixtures/busy_farm.json`: two problems and 16 devices.
+- **The dashboard is phone first, with four tabs** (Status, Services, Incidents, Checks; `#hash` routes in `app.js`). It scrolls; what must stay on screen without scrolling is the Status tab's banner. Charts are inline SVG from `frontend/charts.js`, no library.
+  - Each check is still a tile on the Checks tab: its dot, a short name (`short`, from `SHORT` in `checks.py`) and `value`, at most about six characters. A check with `pct` is drawn as a bar. The full sentence, detail and a 24-hour chart open in a sheet.
+  - **The smoke test** opens every tab at phone and desktop sizes and fails on page errors, sideways scrolling, or a status banner hidden behind the tab bar, both against the live server and in the `phone-busy` pass (`/api/status` from `scripts/fixtures/busy_farm.json`: two problems and 16 devices).
 - **Every push must show a notification** (`service-worker.js`). iOS revokes push for a site that receives a push silently.
 - **Copied from Boord Labour:** `install.ps1`, `update_monitor_server.bat` and `scripts/release.sh`. Keep fixes flowing between the copies. The updater's import list must equal `requirements.txt` (a test checks this).
 - **`install.ps1` adds the repo folder to Git's machine-wide `safe.directory`.** The monitor runs as SYSTEM, and the folder belongs to the admin account that cloned it, so Git refused it as "dubious ownership" and `/api/version` reported `"tag": null`. Boord Owner's and Boord Notes' installers carry the same block, so change all three together.
@@ -137,7 +148,7 @@ Only for a new PC or a reinstall. An app that is already running is updated, not
    ```bat
    git clone https://github.com/DawiePieterse/Boord-monitor.git C:\boord-monitor
    ```
-2. In `C:\boord-monitor`, double-click **`install.bat`** and accept the administrator prompt. It asks for Boord's folder (for the watchdog and its log) and for the admin PIN (`backend\set_pin.py` changes it later). At the end it prints the remote token for the off-site watcher.
+2. In `C:\boord-monitor`, double-click **`install.bat`** and accept the administrator prompt. It asks for Boord's folder (for its database), registers the watchdog (and the heartbeat, once `data\heartbeat_url.txt` exists), and asks for the admin PIN (`backend\set_pin.py` changes it later). At the end it prints the remote token for the off-site watcher.
    It installs Python if needed, builds the app's environment, writes the launcher, registers the scheduled task, reserves the port so Windows can't hand it to Hyper-V, WSL or Docker at boot, and starts the server. Re-running it is safe and keeps the data.
 3. Tell the updater which release key to trust. In the same folder, type it exactly like this, with the redirect first:
    ```bat

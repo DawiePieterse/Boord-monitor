@@ -1,9 +1,12 @@
 # Boord Monitor - Manual
 
-Boord Monitor is one screen that answers "is the farm all right?", and a
-phone alert when it isn't. It watches:
+Boord Monitor answers "is the farm all right?", sends a phone alert when it
+isn't, and keeps the history that shows how well the apps have run over the
+season: uptime per day, availability against a target (SLO), answer-time
+percentiles and a log of every incident. It watches:
 
-- **The apps**: Boord, Boord Owner, Boord Notes, Kudde and Boord Labour. For
+- **The apps**: Boord, Boord Owner, Boord Notes, Kudde, Boord Labour and
+  Boord Packhouse - every app in `apps.json`. For
   each one it checks that the app answers on the farm PC, that it can be
   reached over Tailscale, and which version it runs. Boord also reports
   unapplied database migrations, its last backup and any waiting update.
@@ -12,8 +15,9 @@ phone alert when it isn't. It watches:
   every app on the port the phones expect, with Funnel off. It also checks
   that the HTTPS certificate is still valid.
 - **The farm PC**: free disk space, memory, and when it last restarted.
-- **The safety nets**: whether Boord's watchdog and heartbeat tasks are set
-  up and running, and what the watchdog restarted in the last day.
+- **The safety nets**: whether the watchdog and heartbeat tasks (chapter
+  11, run from this folder) are set up and running, and what the watchdog
+  restarted in the last day.
 - **Google Drive backups**, if you set them up (chapter 5): whether a fresh
   backup has reached each folder Google Drive uploads, and whether Google
   Drive is running to upload it.
@@ -30,13 +34,14 @@ It runs in two places:
 
 The farm PC install is the important one. The off-site watcher is
 optional, but without it nobody is told when the PC is switched off, has
-lost power, or is off the internet. Boord's heartbeat emails
-(healthchecks.io, Boord MANUAL chapter 2) cover that case too. Keep them:
-they work even when the owner's Mac is asleep.
+lost power, or is off the internet. The heartbeat's emails
+(healthchecks.io, chapter 11) cover that case too. Keep them: they work
+even when the owner's Mac is asleep.
 
 ## 1. Installing on the farm PC
 
-Install Boord first: the Restart button uses Boord's `watchdog.ps1`.
+Install Boord first, if this PC runs it: the device tiles read Boord's
+database.
 
 1. Clone this repo beside Boord, for example `C:\boord-monitor` next to `C:\Boord`.
 2. Double-click **`install.bat`** and accept the administrator prompt. It:
@@ -44,7 +49,11 @@ Install Boord first: the Restart button uses Boord's `watchdog.ps1`.
    - finds Boord's folder;
    - asks you to choose the **admin PIN**;
    - registers the "Boord Monitor Server" task, which starts at boot as SYSTEM;
-   - starts the monitor on port **8050**, on this PC only (`127.0.0.1`).
+   - starts the monitor on port **8050**, on this PC only (`127.0.0.1`);
+   - registers the **watchdog**, and the **heartbeat** once
+     `data\heartbeat_url.txt` exists (chapter 11). On a PC set up before
+     Boord Monitor 2.0, this is what moves both from Boord's folder to
+     this one - re-run `install.bat` once after updating.
 3. Publish it on the tailnet. Use `serve`, never `funnel`:
    ```
    tailscale serve --bg --https=8050 http://localhost:8050
@@ -74,18 +83,128 @@ Changing it signs every phone out.
 
 ## 2. Reading the screen
 
-The **banner** at the top is the answer:
+The dashboard has four tabs along the bottom, like an iPhone app:
 
-- **Green, "All good"**: nothing to do.
-- **Amber, "All up · N to check"**: everything works, but something needs a
-  look soon. Examples: the Tailscale key expires in a fortnight, the disk is
-  getting full, the PC rebooted half an hour ago, or an app is answering
+| Tab | What it answers |
+| --- | --- |
+| **Status** | Is the farm all right now, and how has it been? |
+| **Services** | How well is each app doing against its target? |
+| **Incidents** | What broke, for how long, and how quickly was it fixed? |
+| **Checks** | Every single check, as a small tile. |
+
+The two buttons at the top right are:
+
+- the **circular arrow**: check now. Pulling the screen down from the top
+  does the same.
+- the **"..."** menu, with a small green dot when alerts are on for this
+  phone. It holds **Alerts on this phone** (chapter 3), **Maintenance
+  window** (below), **Sign in as admin** / **Sign out**, **Metrics** (for
+  other tools, chapter 10) and, at the bottom, the monitor's version.
+
+The page refreshes every 30 seconds, and the monitor itself checks every
+minute.
+
+### Status
+
+The **banner** at the top is the answer, in the words status pages use:
+
+- **Green, "All systems operational"**: nothing to do.
+- **Amber, "Degraded · N to check"**: everything works, but something needs
+  a look soon. Examples: the Tailscale key expires in a fortnight, the disk
+  is getting full, the PC rebooted half an hour ago, or an app is answering
   with errors.
-- **Red, "N problems"**: something is broken now. Each problem is listed
-  under the banner, one line each. Tap a line to read the rest.
+- **Red, "Partial outage"** (some apps down), **"Major outage"** (every app
+  down) or **"N problems"** (the apps work, but something else is broken,
+  such as a backup or a certificate). Each problem is listed under the
+  banner, one line each. Tap a line to read the rest.
 
-Below the banner, every check is a small **tile**, grouped by what it
-watches, and the whole farm fits on one phone screen:
+Under the banner it says when the last check ran. If that turns orange
+("monitor stalled?"), the monitor itself has stopped checking.
+
+Below it:
+
+- **Active incidents**: anything broken long enough to open an incident
+  (see Incidents). Tap one for its timeline.
+- **Maintenance**: a blue note while a maintenance window is on.
+- Four **headline numbers**: the apps' availability over 30 days, how many
+  incidents are open, the mean time to resolve them (MTTR), and the error
+  budget left on the app that has used most of its own (see Services).
+- **Uptime bars**, 90 days per component: one thin bar per day, green when
+  nothing failed that day, amber for a short outage (up at least 99% of the
+  day), red for a longer one, grey for a day with no record. The percentage
+  is the 90-day availability. Tap a bar to see that day; tap the name for
+  the check itself.
+
+Devices have no uptime bars: tablets are switched off every night, and that
+is not an outage.
+
+### Services
+
+One card per app:
+
+- **SLO 99.5% · 30 days** and the big number: the app's target and its
+  actual **availability**, the share of the monitor's once-a-minute checks
+  it answered. Any answer counts, even an error, the same rule as Boord's
+  watchdog. The chip says **Met**, **At risk** or **Missed**.
+- **Error budget**: the downtime the target allows. 99.5% over 30 days is
+  3 h 36 min. The bar shows how much is left. *At risk* means under a
+  quarter is left, or it is being used up very fast.
+- **24 h** and **7 days**: availability over shorter windows.
+- **Burn 1 h** and **Burn 6 h**: how fast the budget is being spent now. 1×
+  spends exactly the whole budget in 30 days; 14× or more (red) is an
+  outage happening now.
+- **p50, p95, p99**: answer times over the last day. p95 is the time 95 out
+  of 100 answers beat, so it shows slowness the average hides. The target
+  is p95 under 1 second; **p95 7 d** turns amber when the week misses it.
+- The **chart**: answer time over the last 24 hours, with a strip under it
+  coloured by status, so an outage shows red even though a down app has no
+  answer time. A dashed line marks the target when the line comes near it.
+- **Open**, **Restart** (chapter 4) and **Details**.
+
+When the monitor has not been running for the whole 30 days (just
+installed, or the PC was off), the card says how much of the window it
+watched.
+
+To change an app's targets, see *data\slo.txt* in chapter 9.
+
+### Incidents
+
+An **incident** opens when a check has failed three times in a row - the
+moment a phone is woken - and closes by itself on the first good check.
+Each has a **timeline**: first failed check, opened, phones told,
+acknowledged, reminders, resolved.
+
+- **Acknowledge** (admin PIN) says "I've seen it, I'm on it". It stops the
+  reminders that otherwise come every 6 hours. It does not close the
+  incident; only the app recovering does. The phone asks your name once, so
+  the incident says who is on it.
+- A check that is set never to wake anyone (Google Drive in the first half
+  hour after a reboot, for example) still opens an incident, marked *not
+  paged*, so the record is complete.
+
+At the top, for the last 7, 30 or 90 days:
+
+| Number | Meaning |
+| --- | --- |
+| **Incidents** | How many started. |
+| **MTTR** | Mean time to resolve: first failed check to first good one. How long the farm actually had the problem. |
+| **MTTA** | Mean time to acknowledge: from the phones being told to someone tapping Acknowledge. |
+| **MTBF** | Mean time between failures. |
+| **Downtime** | All resolved incidents added up. |
+
+**Maintenance windows**: before working on the PC (installing updates,
+moving an app), tap **New**, choose what (everything, a group or one app),
+for how long and why. While it lasts the dashboard still shows red, but no
+phone is woken for it. If it is still broken when the window ends, the
+phones are told then. **End** finishes a window early. Both need the admin
+PIN.
+
+**Recent changes**, at the bottom, lists every change of state, including
+blips the watchdog fixed before an incident opened.
+
+### Checks
+
+Every check is a small **tile**, grouped by what it watches:
 
 - The **dot** is the check's state: green is fine, amber needs a look, red
   is broken and grey means not installed or can't be checked here.
@@ -105,30 +224,10 @@ watches, and the whole farm fits on one phone screen:
 - **Disk** and **Memory** are bars: the fuller the bar, the fuller the disk
   or memory.
 
-On a farm with many devices the screen tightens itself to stay on one
-screen. First the spacing shrinks. If that isn't enough, the devices become
-small dots with names, and a device's number shows only when it needs a
-look. On a small phone, such as an iPhone SE, a long device list can still
-need a short scroll.
-
-**Tap any tile** for the whole explanation and what to do about it. For
-example, Ports shows the PC's live mapping, and Restarts shows the
-watchdog's last log lines. An app's sheet has **Open app** and **Restart**.
-
-The two buttons at the top right are:
-
-- the **circular arrow**: check now. Pulling the screen down does the same.
-- the **"..."** menu, with a small green dot when alerts are on for this
-  phone. It holds:
-  - **Recent changes**: what broke and was fixed, newest first;
-  - **Alerts on this phone**: turn alerts on or off, or send a test
-    (chapter 3);
-  - **Sign in as admin** / **Sign out**;
-  - at the bottom, the monitor's version.
-
-The page refreshes every 30 seconds, and the monitor itself checks every
-minute. Under the banner it says when the last check ran. If that turns
-orange ("monitor stalled?"), the monitor itself has stopped checking.
+**Tap any tile** for the whole explanation, its last 24 hours as a chart,
+and what to do about it. For example, Ports shows the PC's live mapping, and
+Restarts shows the watchdog's last log lines. An app's sheet has **Open
+app** and **Restart**.
 
 If your phone loses contact with the monitor, the last picture stays on
 screen with a note saying how old it is. "Can't reach the monitor - check
@@ -147,7 +246,8 @@ Tailscale is on on the phone, then that the farm PC is on.
 | *Tailscale key expires ...* | In the Tailscale admin console, open the farm PC's menu and choose **Disable key expiry**. A lapsed key drops the PC off the tailnet, and every phone loses every app at once. |
 | *Database migrations were not applied* | An update of Boord didn't finish. Run Boord's `update_server.bat` again. |
 | *Disk almost full* | Free space on the farm PC. SQLite can't write without room. |
-| *Watchdog / Heartbeat: Not set up* | Run Boord's `setup_watchdog.bat` / `setup_heartbeat.bat`. |
+| *Watchdog / Heartbeat: Not set up* | Run `install.bat` in this folder (the heartbeat also needs `data\heartbeat_url.txt`, chapter 11). |
+| *Watchdog / Heartbeat: runs C:\Boord\...ps1 instead* | The task still runs Boord's old copy, which only forwards here now. Run `install.bat` in this folder once. |
 | *Update: restart* | Windows has installed updates and will restart the PC by itself outside its active hours, taking every app down for a few minutes. Restart it yourself at a quiet time, or set active hours to cover the pack house in Settings > Windows Update > Advanced options. |
 | *Dev 03: 14 wait* (amber) | That tablet has held crates unsent for over an hour, and they exist nowhere else. Bring it into signal, and check its sync status on its screen. |
 | *Google Drive: Not running* | Nothing is being uploaded. Log in on the farm PC and start Google Drive if it doesn't start itself. |
@@ -221,9 +321,9 @@ Tap the app's tile, then **Restart**, and enter the PIN if asked. Everyone using
 loses it for up to a minute. Phones keep what they scanned and send it once
 the app is back.
 
-The monitor doesn't restart anything itself. It asks Boord's watchdog
-(`watchdog.ps1 -Restart`), so a restart from your phone takes the same care
-as an automatic one:
+The monitor doesn't restart anything itself. It asks the watchdog
+(`watchdog.ps1 -Restart`, chapter 11), so a restart from your phone takes
+the same care as an automatic one:
 
 - It **refuses while an update or install is running**. Starting a server
   on top of a half-finished database migration is worse than leaving it
@@ -444,8 +544,284 @@ remote/install_remote.sh <same URL> <same token>
 | `data\drive_backups.txt` | The Google Drive backup folders to check (chapter 5). Not a credential. |
 | `data\devices.txt` | Which devices to show, and their names (chapter 6). Optional. |
 | `data\state.json` | What has been alerted, so a restart of the monitor doesn't re-send standing problems. |
+| `data\heartbeat_url.txt` | The healthchecks.io ping URL for each app (chapter 11). A credential. |
+| `data\watchdog.log` | What the watchdog found and restarted (chapter 11). |
+| `data\watchdog.pause` | Optional, hand-made: tells the watchdog to leave the servers alone (chapter 11). |
+| `data\history.db` | Every check's results (each minute for two days, hourly for 400 days), the incidents and the maintenance windows. Deleting it only loses the history. |
+| `data\slo.txt` | Optional: each app's targets, one line per app, `app \| availability % \| p95 ms`, e.g. `boord \| 99.9 \| 500`. App names are boord, owner, notes, kudde, labour. A blank field keeps the default (99.5% and 1000 ms). Read on every refresh. |
 | `data\server.log` | Everything the monitor prints, with each start and exit stamped. The previous one is `server.log.1`. |
 
 None of these is committed to git. If you lose `data\`, everything still
 works: set the PIN again, turn alerts on again on each phone, and give the
 off-site watcher the new token.
+
+## 10. Connecting other tools
+
+The monitor speaks the standard formats, so the farm can be added to
+Grafana, Uptime Kuma or any Prometheus-compatible tool later without
+changing it. All three are open to the tailnet, like the dashboard:
+
+| Address | What it is |
+| --- | --- |
+| `/metrics` | Every figure in Prometheus' text format: each check's status, the apps' answer times (with a histogram), disk, memory, key and certificate expiry, backup ages, devices, open incidents and each app's SLO. |
+| `/healthz` | Answers `{"status": "ok"}` while the monitor is running. |
+| `/readyz` | 200 when the monitor has checked within the last few minutes and can write its history; 503 otherwise, so an outside probe can tell a stuck monitor from a working one. |
+
+For example, Prometheus scrape config:
+
+```yaml
+scrape_configs:
+  - job_name: boord
+    scheme: https
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["bekfontein-server.taile32cb0.ts.net:8050"]
+```
+
+## 11. Keeping the apps running: the watchdog and the heartbeat
+
+Two scheduled tasks keep the farm's apps running, and both run from this
+folder. Until Boord Monitor 2.0 they lived in Boord's folder; `install.bat`
+moves an existing farm across (it re-points both tasks here and copies
+`heartbeat_url.txt` and the watchdog's log).
+
+| Task | Every | Does |
+| --- | --- | --- |
+| **Boord Watchdog** | 5 min | Restarts any app on this PC that has stopped answering. |
+| **Boord Heartbeat** | 10 min | Pings healthchecks.io for each app that answers, so you are emailed when this PC is off or off the internet. |
+
+**Register both - they do opposite halves of the job.** The watchdog runs
+on this PC, so it can fix things but can tell you nothing when the PC is
+off, asleep or off the internet. The heartbeat can't fix anything, but it
+is the only one that reaches you when the PC itself is the problem. They
+are separate tasks, not part of the monitor's server, so a crashed
+monitor still has its restarts and its heartbeat - and the watchdog is
+what restarts the monitor.
+
+The **Safety nets** tiles show both tasks. They turn amber when a task is
+missing, has stopped running, or still runs Boord's old copy (run
+`install.bat` here once).
+
+**Adding an app to the farm** is one line in `apps.json` (name, port,
+`tailscale serve` port, task, health path, updater), released as a Boord
+Monitor update. The watchdog, the heartbeat and the dashboard all pick it
+up; nothing else needs editing.
+
+### The heartbeat (email if the PC goes down)
+
+Gets you an email if a server is unreachable for more than an hour.
+This can't be done by anything running only on the server PC itself - if
+that PC loses power or its internet entirely, nothing on it can send you
+anything. Instead it uses a **"dead man's switch"**: the server pings an
+outside monitoring service every 10 minutes to say "still alive," and
+that outside service is the one that notices when the pings stop and
+emails you - it's watching for silence, not waiting to be told about a
+problem.
+
+**Step 1 - Create a healthchecks.io check for each application.**
+1. Sign up free at [healthchecks.io](https://healthchecks.io).
+2. Create **one check per application you want watched** - every app in
+   the table below can have its own. Name them so you
+   can tell them apart in an email at six in the morning ("Boord",
+   "Kudde", and so on). Watching only Boord is a perfectly reasonable
+   choice; the others are then simply not reported on.
+3. On each check, click **Edit** and set **Period** to **10 minutes** and
+   **Grace Time** to **1 hour** - an isolated missed ping (a brief
+   network blip) is tolerated, but if pings stop entirely for over an
+   hour, it emails the account's address.
+4. Copy the ping URL from each check's page (each starts with
+   `https://hc-ping.com/...`). They are different URLs; keep track of
+   which belongs to which.
+
+**Step 2 - Save the ping URLs on the server.**
+Create a text file at `data\heartbeat_url.txt` in Boord Monitor's
+folder, naming one application per line:
+
+```
+boord = https://hc-ping.com/aaaaaaaa-...
+owner = https://hc-ping.com/bbbbbbbb-...
+notes = https://hc-ping.com/cccccccc-...
+kudde = https://hc-ping.com/dddddddd-...
+labour = https://hc-ping.com/eeeeeeee-...
+packhouse = https://hc-ping.com/99999999-...
+monitor = https://hc-ping.com/ffffffff-...
+```
+
+The names on the left are `boord`, `owner`, `notes`, `kudde`, `labour`,
+`packhouse` and `monitor` (the `key` of each app in `apps.json`); the
+app's full name works too. Case
+doesn't matter and neither do spaces or hyphens, so `Boord Owner` and
+`boord-owner` both work. Blank lines are ignored, and a line starting
+with `#` is a comment. Leave out any application you don't want watched.
+
+If your file already contains a single URL on its own with no name in
+front of it - which is what installs before Boord v3.8 were told to create -
+**leave it exactly as it is.** A bare URL means Boord, so that file keeps
+working untouched, and you can add the others as named lines beneath
+it.
+
+> **One line may be bare, and it means Boord.** Adding a second
+> application by pasting its URL on a line of its own does not work, and
+> the setup script says so rather than letting it silently take over
+> Boord's alerting. Give every URL after the first a name.
+
+This file is deliberately **not** committed to git - like a password,
+each URL is account-specific and shouldn't live in version control
+(`data\` is excluded). A PC set up before the heartbeat moved here had
+this file in Boord's folder; `install.bat` copies it across. Anyone holding one of these URLs can
+post to your check.
+
+**Step 3 - Register the heartbeat task.**
+Run **`install.bat`** again, or double-click **`setup_heartbeat.bat`** in
+Boord Monitor's folder. It registers a Scheduled Task
+("Boord Heartbeat") that runs `heartbeat.ps1` every 10 minutes. For each
+application you listed, it pings that application's check only when the
+app itself actually answers on its own port - so a crashed or hung
+server (not just a powered-off PC) also triggers the alert, since the
+ping is contingent on the app working, not just the PC being on.
+
+The script finishes by reading `data\heartbeat_url.txt` back and printing
+which applications it will report on. **Read that list.** A mistyped name
+is otherwise completely silent: the line does nothing, that application
+is never reported on, and the absence of alerts looks exactly like an
+application that has been fine all along. To see the same list again at
+any time:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File heartbeat.ps1 -DryRun
+```
+
+That reads the file and pings nothing.
+
+That's it - as long as a check on healthchecks.io keeps receiving pings,
+nothing happens. If that application goes down and stays down past the
+1-hour grace period, healthchecks.io emails the account used to sign up,
+naming the check - which is why it is worth naming them properly in step
+1. The applications are independent: Boord going down does not silence
+Kudde's check or vice versa.
+
+Note that an application listed in `data\heartbeat_url.txt` but **not
+installed** on this PC will be reported as down, because it genuinely
+isn't answering. If you remove an application from the PC, remove its
+line from the file too.
+
+**What the ping carries.** Each successful ping sends a short line of text
+with it, visible in the check's log on healthchecks.io. It is there so the
+release a site is running can be read from the monitoring account instead
+of phoning someone and asking them to read a screen. Every app with an
+`/api/version` sends it; one without simply pings with nothing attached.
+It contains exactly:
+
+- the release tag and whether it is a release, a checkout between releases,
+  or unknown
+- the version the app screens display
+- the database schema revision the code expects, and the one the database
+  is actually at - so a farm that never ran its migrations is visible
+- the date of the last backup, and how many are kept
+
+**It contains nothing about any person** - no worker names, WhatsApp
+numbers, photographs or counts, no supplier or block names, no
+crate or lot figures, no coordinates, no file paths and no usernames. The
+pack house's own name is deliberately left out too: the check already
+carries whatever name you gave it in your own account.
+
+> **healthchecks.io is a third party.** Anyone with access to that account
+> can read these lines. The ping URL in `data\heartbeat_url.txt` is a password
+> in every practical sense - anyone holding it can post to your check.
+
+### The watchdog (restart an app that stops)
+
+**But "leave it running" is not a plan on its own.** Each server on this
+PC is registered to start when Windows starts, and after that nothing
+looks at it again. If the app stops at eleven in the morning - an
+unhandled error, a bad update, Windows reclaiming memory under pressure -
+the scheduled task simply ends, and nothing brings it back until somebody
+reboots the PC. On a pack house floor that is a morning of paper.
+
+**The watchdog fixes that.** `install.bat` registers it: a Scheduled Task
+("Boord Watchdog") that runs `watchdog.ps1` from this folder every 5
+minutes and, for each of the servers installed on this PC, checks that
+the port actually answers. Anything that has stopped answering is
+stopped properly and started again. (`setup_watchdog.bat` registers it on
+its own, and shows what it finds.) It covers every application in
+`apps.json` - the one table of the farm's apps, which the monitor and the
+heartbeat read too:
+
+| Application | Port | Scheduled task |
+| --- | --- | --- |
+| Boord | 8000 | Boord Server |
+| Boord Owner | 8010 | Boord Owner Server |
+| Boord Notes | 8020 | Boord Notes Server |
+| Kudde | 8030 | Kudde Server |
+| Boord Labour | 8040 | Boord Labour Server |
+| Boord Monitor | 8050 | Boord Monitor Server |
+| Boord Packhouse | 8060 | Boord Packhouse Server |
+
+An application that isn't installed here is skipped, not reported as
+down, so the same file suits a PC running two of them and a PC running
+all of them. What it found and what it did is written to
+`data\watchdog.log`, which the **Watchdog log** tile reads.
+
+**Register the watchdog *and* the heartbeat above - they do opposite
+halves of the job.** The watchdog runs on the server PC, so it can fix
+things but can tell you nothing when that PC is off, asleep or off the
+internet. The heartbeat can't fix anything, but it is the only one of the
+two that reaches you when the PC itself is the problem. Neither replaces
+the other.
+
+**What it deliberately won't do.**
+
+- **It won't restart a server over a slow moment.** A single missed check
+  is not an outage - a virus scan can stall a request past ten seconds.
+  It probes three times, fifteen seconds apart, and only acts if all
+  three fail.
+- **It won't restart anything for the first five minutes after a
+  reboot**, while the servers are still starting.
+- **It won't restart anything while an update or an install is
+  running.** An app's updater (`update_server.bat` and the like, each
+  named in `apps.json`) stops the server *on purpose* so the
+  database migration runs with nothing writing to it; a watchdog that
+  helpfully started it again would put a live server on top of a
+  half-migrated database. It notices those scripts running and stands
+  down.
+- **It won't kill a process it can't prove is ours.** If something else
+  on the PC has taken one of these ports, it refuses to restart and says
+  so in the log, rather than killing an unrelated program with system
+  rights.
+- **It won't restart a server that is merely erroring.** Any HTTP
+  answer - including a 500 - counts as up. Only a refused connection or
+  a timeout counts as down, because a restart cannot fix a bug and taking
+  a working pack house offline to try is the worse trade.
+
+**Pausing it.** If you're working on a server by hand and want it to stay
+down, create an empty file at `data\watchdog.pause` in Boord Monitor's
+folder. (A maintenance window, chapter 2, is different: it stops the
+*alerts*, while this stops the *restarts*. Working on a server by hand
+usually wants both.)
+The watchdog leaves everything alone while that file exists. Delete it
+when you're done - and if you forget, it's ignored after 12 hours and
+normal restarts resume, so a forgotten pause file can't quietly disable
+the thing for a season.
+
+**Checking on it.** To see the current state of every app without waiting
+for the next run, open a terminal in Boord Monitor's folder and run:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File watchdog.ps1 -CheckOnly
+```
+
+That reports what is up and what is down and changes nothing.
+
+**Restarting one app on purpose.** The Restart button (chapter 4) runs
+the watchdog with `-Restart`, so a restart asked for from a phone takes
+the same care as an automatic one: it stands down while an update is
+running, and refuses to kill a process it can't prove is that app's. The
+same works from a terminal in Boord Monitor's folder:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File watchdog.ps1 -Restart "Boord Owner"
+```
+
+The name is the one in the table above. It exits 0 once the app answers
+again, 2 if it refused because an update or install is running, and 1
+otherwise. Either way it says what it did in `data\watchdog.log`.

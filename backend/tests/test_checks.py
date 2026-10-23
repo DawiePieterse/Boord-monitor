@@ -2,6 +2,7 @@
 import datetime as dt
 
 import checks
+import config
 from tests.conftest import DNS, GOOD_SERVE, NOW, by_id, serve_for, ts_status
 
 
@@ -157,12 +158,25 @@ def test_watchdog_missing_or_stale(fake):
     del fake.tasks["Boord Watchdog"]
     c = by_id(checks.farm_checks(fake))["guards.watchdog"]
     assert c["status"] == "warn"
-    assert "setup_watchdog.bat" in c["summary"]
+    assert "install.bat" in c["summary"]
     fake.tasks["Boord Watchdog"] = {"Name": "Boord Watchdog", "State": "Ready",
                                     "LastRun": (NOW - dt.timedelta(hours=2)).isoformat() + "Z", "LastResult": 0}
     c = by_id(checks.farm_checks(fake))["guards.watchdog"]
     assert c["status"] == "warn"
     assert "Has not run" in c["summary"]
+
+
+def test_a_watchdog_still_running_boords_copy_warns(fake):
+    """After 2.0 the task must run this repo's watchdog.ps1. One still
+    pointing at Boord's folder says so, and how to fix it."""
+    fake.tasks["Boord Watchdog"]["Action"] = (
+        'powershell -NoProfile -ExecutionPolicy Bypass -File "C:\\Boord\\watchdog.ps1"')
+    c = by_id(checks.farm_checks(fake))["guards.watchdog"]
+    assert c["status"] == "warn"
+    assert "C:\\Boord\\watchdog.ps1" in c["summary"] and "install.bat" in c["summary"]
+    fake.tasks["Boord Watchdog"]["Action"] = (
+        f'powershell -NoProfile -ExecutionPolicy Bypass -File "{config.WATCHDOG_PS1}"')
+    assert by_id(checks.farm_checks(fake))["guards.watchdog"]["status"] == "ok"
 
 
 def test_watchdog_log(fake):
@@ -192,7 +206,7 @@ def test_every_tile_has_something_to_show(fake):
     results = by_id(checks.farm_checks(fake))
     assert results["app.boord"]["value"] == "15ms"
     assert results["ts.key"]["value"] == "62d" and results["ts.key"]["short"] == "Key"
-    assert results["ts.serve"]["value"] == "6/6"
+    assert results["ts.serve"]["value"] == "7/7"
     assert results["ts.cert"]["value"] == "60d"
     assert results["pc.disk"]["value"] == "120 GB free" and results["pc.disk"]["pct"] == 76
     assert results["pc.memory"]["value"] == "50% used" and results["pc.memory"]["pct"] == 50
@@ -202,7 +216,7 @@ def test_every_tile_has_something_to_show(fake):
     fake.serve = serve_for({**GOOD_SERVE, 443: 8010})
     results = by_id(checks.farm_checks(fake))
     assert results["app.boord"]["value"] == "down"
-    assert results["ts.serve"]["value"] == "5/6"
+    assert results["ts.serve"]["value"] == "6/7"
 
 
 def test_short_durations():

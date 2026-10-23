@@ -60,8 +60,8 @@ def test_incomplete_subscription_is_refused(admin_client):
 def test_restart_runs_boords_watchdog(admin_client, monkeypatch):
     import os
     import subprocess
-    with open(os.path.join(config.BOORD_DIR, "watchdog.ps1"), "w") as fh:
-        fh.write("# stub")
+    # The real watchdog.ps1 in this repo; subprocess.run is faked below.
+    assert os.path.exists(config.WATCHDOG_PS1)
     seen = {}
 
     class Done:
@@ -85,14 +85,11 @@ def test_restart_runs_boords_watchdog(admin_client, monkeypatch):
     assert "RECOVERED" in job["output"][0]
 
 
-def test_restart_without_boords_watchdog_explains(admin_client):
-    import os
-    path = os.path.join(config.BOORD_DIR, "watchdog.ps1")
-    if os.path.exists(path):
-        os.remove(path)
+def test_restart_without_the_watchdog_explains(admin_client, monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "WATCHDOG_PS1", str(tmp_path / "watchdog.ps1"))
     r = admin_client.post("/api/apps/boord/restart")
     assert r.status_code == 409
-    assert "MONITOR_BOORD_DIR" in r.json()["detail"]
+    assert "watchdog.ps1 is not at" in r.json()["detail"]
 
 
 def test_unknown_app(admin_client):
