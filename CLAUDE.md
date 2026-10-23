@@ -8,6 +8,41 @@ Boord Monitor watches the farm PC: the five sibling apps (Boord 8000, Owner 8010
 
 It shares no database or code with the siblings. It does call into Boord's repo: it reads Boord's `data/watchdog.log` and runs Boord's `watchdog.ps1 -Restart "<Name>"` (`MONITOR_BOORD_DIR`).
 
+## The Boord suite
+
+This app is one of six that run together on the farm PC (`bekfontein-server`), each its own repo, process, port and database. They are reached only over Tailscale, and each binds `127.0.0.1` and is published with `tailscale serve`. The same section is in every app's `CLAUDE.md`. When a fact here changes, change it in all six.
+
+| App | Repo (`DawiePieterse/…`) | What it does | Port | Tailnet address | Mac folder | Farm PC folder |
+|---|---|---|---|---|---|---|
+| Boord | `Boord` | Harvest capture and picker pay per kg: field tablets, pack-house receiving, admin office. The hub. | 8000 | `https://bekfontein-server.taile32cb0.ts.net/` | `~/Documents/Projects/Boord` | `C:\Boord` |
+| Boord Owner | `boordowner` | The owner's view: season vs history, weather, risk, crop estimate, optional AI. | 8010 | `https://bekfontein-server.taile32cb0.ts.net:8443/` | `~/Documents/Projects/BoordOwner` | `C:\BoordOwner` |
+| Boord Notes | `boord-notes` | Private farm notebook for Andre and his son, offline-first, optional AI. | 8020 | `https://bekfontein-server.taile32cb0.ts.net:9443/` | `~/Documents/Projects/BoordNotes` | `C:\bekfontein-farm-notebook` |
+| Kudde | `Kudde` | Cattle records: animals and their events. | 8030 | `https://bekfontein-server.taile32cb0.ts.net:8030/` | `~/Documents/Projects/Kudde` | `C:\Kudde` |
+| Boord Labour | `Boord-labour` | Packhouse time clock: badge scans at the door, hourly pay with overtime. | 8040 | `https://bekfontein-server.taile32cb0.ts.net:8040/` | `~/Documents/Projects/Boord-labour` | `C:\Boord-labour` |
+| **Boord Monitor** (this app) | `Boord-monitor` | Watches the PC and the other five apps; Web Push alerts and a Restart button. | 8050 | `https://bekfontein-server.taile32cb0.ts.net:8050/` | `~/Documents/Projects/Boord-monitor` | `C:\boord-monitor` |
+
+**How they depend on each other:**
+- **Boord is the hub.** Its `data/boord.db` is opened read-only by Owner (harvest, lots, blocks, suppliers), Labour (the worker register, and Boord's `data/photos` for faces) and Monitor (tablet station, last sync and outbox).
+  - Boord is that database's only writer and migrates it at startup.
+  - Owner and Labour refuse to boot if a column they read disappears. A Boord migration that drops or renames a column needs those apps updated in step.
+- **Labour's badges are Boord's.** The badge QR holds exactly `worker.id` (`Boord/frontend/admin/print-badge.html`), and Labour vendors Boord's `frontend/shared/`.
+- **Owner asks Notes.** The "Ask the farm notes" bridge calls Notes' `/api/ai/ask` at `OWNER_NOTES_URL` (`http://127.0.0.1:8020`) and can share Notes' `data/anthropic_key.txt`.
+- **Boord keeps the others running.** Boord's `watchdog.ps1` (restarts an app that stops answering) and `heartbeat.ps1` cover all six.
+  - Their app table (name, port, task, health path) must match Monitor's `backend/apps.py` and the port table above. Change them together.
+  - Monitor reads Boord's `data/watchdog.log`, and its Restart button runs Boord's `watchdog.ps1 -Restart "<Name>"`.
+- **Monitor watches everything.** It shows each app's up/down state and `/api/version`, Tailscale and the PC, and pushes an alert after three failed checks in a row.
+  - Every app's `/api/version` keeps the same field names (`tag`, `state`, `frontend_version`), because Monitor and the heartbeat read them all.
+  - An off-site copy of the monitor on the owner's Mac alerts when the whole farm PC is unreachable.
+- **Kudde and Notes stand alone.** No other app reads their data. They are only watched and restarted.
+
+**What they share by convention, not code:**
+- One release key: fingerprint `67C64CFDD584DD140E58AF6E329C9B9DD0562A9D` in each app's `data\release_key.fpr`.
+- Releases are signed tags, made from an up-to-date `main` on the Mac and installed by each app's updater on the farm PC.
+- `stop_server.ps1` stops each server, never a bare `schtasks /end`. Labour's copy is the reference.
+- Each installer adds a Git `safe.directory` exception so SYSTEM's Git can read the repo folder.
+- Python 3.9-compatible code, plain JS with no CDNs (the phones are tailnet-only), and `VERSION` plus the service-worker `CACHE` bumped with every frontend change.
+- Fixes to the copied deployment files (`install.ps1`, the updaters, `stop_server.ps1`, `release.sh`) flow between the repos.
+
 ## Commands
 
 All backend commands run from `backend/`. Keep code Python 3.9-compatible (the farm's minimum): no `X | None`, no `match`.
