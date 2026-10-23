@@ -6,9 +6,10 @@
    and a screen that behaves like the rest of their phone needs no learning
    - which matters when it is opened once a fortnight, in a hurry.
 
-   Everything is sized so the whole farm fits one phone screen (390 x 844,
-   an iPhone 14) without scrolling: the colours are the answer, and the
-   words are one tap away in the sheet. */
+   Phone first (390 x 844, an iPhone 14), with an iOS tab bar for the four
+   sections. The Status tab's banner and incidents sit at the top so the
+   answer is on screen without scrolling; the history below it scrolls. On
+   a wide screen the cards flow into columns. */
 :root {
   --bg: #f2f2f7;
   --card: #ffffff;
@@ -82,7 +83,8 @@ body {
   font: 15px/1.35 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-tap-highlight-color: transparent;
-  padding-bottom: env(safe-area-inset-bottom);
+  /* Room for the fixed tab bar. */
+  padding-bottom: calc(64px + env(safe-area-inset-bottom));
 }
 button { font: inherit; color: inherit; }
 
@@ -90,7 +92,7 @@ button { font: inherit; color: inherit; }
 .nav {
   position: sticky; top: 0; z-index: 10;
   display: flex; align-items: flex-end; justify-content: space-between; gap: 8px;
-  max-width: 760px; margin: 0 auto;
+  max-width: 1100px; margin: 0 auto;
   padding: calc(8px + env(safe-area-inset-top)) 12px 4px 16px;
   background: var(--bar-bg);
   -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
@@ -150,7 +152,7 @@ button { font: inherit; color: inherit; }
 .ptr.settle { transition: transform .25s, opacity .25s; }
 .ptr svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 
-main { max-width: 760px; margin: 0 auto; padding: 6px 16px 12px; }
+main { max-width: 1100px; margin: 0 auto; padding: 6px 16px 16px; }
 
 /* --- the status card ---------------------------------------------------------- */
 /* The answer to "is the farm all right?": a coloured symbol and one line,
@@ -197,7 +199,8 @@ main { max-width: 760px; margin: 0 auto; padding: 6px 16px 12px; }
 /* On a wide screen two groups sit side by side; on a phone, one per row. */
 @media (min-width: 640px) { .groups { grid-template-columns: 1fr 1fr; gap: 14px; } }
 
-.card { background: var(--card); border-radius: 14px; padding: 8px; }
+.card { background: var(--card); border-radius: 14px; padding: 8px; margin-bottom: 12px; }
+.groups .card { margin-bottom: 0; }
 /* iOS section header: small, grey, outside the card's content. */
 .card h2 {
   display: flex; align-items: baseline; gap: 6px; margin: 0 4px 6px;
@@ -236,30 +239,6 @@ main { max-width: 760px; margin: 0 auto; padding: 6px 16px 12px; }
 .bar-fill { display: block; height: 100%; border-radius: 3px; background: var(--ok); }
 .bar-warn { background: var(--warn); }
 .bar-fail { background: var(--fail); }
-
-/* --- fitting one phone screen (fitScreen in app.js) -------------------------------- */
-/* Step one: the same screen with less air - padding, gaps and tile heights
-   trimmed, nothing hidden. */
-body.dense .nav-title { font-size: 26px; }
-body.dense main { padding-top: 2px; }
-body.dense .banner { padding: 8px 12px; margin-bottom: 8px; }
-body.dense .banner-problems { margin: 8px -12px -8px; }
-body.dense .problem { padding: 6px 12px; }
-body.dense .groups { gap: 7px; }
-body.dense .card { padding: 6px; }
-body.dense .card h2 { margin-bottom: 4px; }
-body.dense .tiles { gap: 5px; }
-body.dense .tile { min-height: 48px; padding: 3px 2px; }
-body.dense .tile-meter { padding: 4px 10px; }
-body.dense .tiles-small .tile { min-height: 40px; }
-/* Step two, for a farm with a long device list: devices become small dots
-   with their names, seven or eight across, and keep their number only when
-   something about them needs a look. Every detail is still a tap away. */
-body.densest .tiles-small { grid-template-columns: repeat(auto-fill, minmax(42px, 1fr)); gap: 4px; }
-body.densest .tiles-small .tile { min-height: 32px; padding: 2px 1px; gap: 1px; }
-body.densest .tiles-small .tile-name { font-size: 10px; }
-body.densest .tiles-small .tile-ok .tile-value,
-body.densest .tiles-small .tile-off .tile-value { display: none; }
 
 .dot { flex: none; width: 11px; height: 11px; border-radius: 50%; background: var(--off); }
 .dot-ok { background: var(--ok); }
@@ -344,3 +323,140 @@ button:disabled { opacity: .45; cursor: default; }
 .muted { color: var(--muted); }
 .small { font-size: 13px; }
 .error { color: var(--fail-ink); font-weight: 600; }
+
+/* --- 2.0: the tab bar ---------------------------------------------------------------- */
+/* iOS's: frosted, fixed to the bottom, an icon over each word, the current
+   tab in the tint colour. Thumb's reach on a phone. */
+.tabbar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+  display: flex; justify-content: center;
+  padding: 4px 8px calc(4px + env(safe-area-inset-bottom));
+  background: var(--bar-bg); border-top: .5px solid var(--line);
+  -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+}
+.tab {
+  position: relative; flex: 1; max-width: 140px; min-height: 48px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  color: var(--muted); text-decoration: none; font-size: 10.5px; font-weight: 500;
+}
+.tab svg { width: 25px; height: 25px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.tab svg .fill { fill: currentColor; stroke: none; }
+.tab[aria-current="page"] { color: var(--tint); }
+.tab:active { opacity: .5; }
+.tab-badge {
+  position: absolute; top: 2px; left: calc(50% + 6px); min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 9px; background: var(--fail); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center;
+}
+
+/* --- views ------------------------------------------------------------------------ */
+.section-note { margin: 0 4px 12px; font-size: 13px; color: var(--muted); }
+.notice-maint { background: color-mix(in srgb, var(--tint) 12%, var(--card)); color: var(--ink); font-weight: 400; }
+.row-between { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.head-btn { margin-left: auto; font-size: 14px; padding: 0 4px; text-transform: none; letter-spacing: 0; font-weight: 600; }
+
+/* KPI tiles: a label, one big number, a line saying what it is - the
+   "stat panel" of every monitoring dashboard. */
+.kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 12px; }
+.kpis:empty { display: none; }
+@media (min-width: 640px) { .kpis { grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); } }
+.kpi { background: var(--card); border-radius: 14px; padding: 10px 12px; display: flex; flex-direction: column; min-width: 0; }
+.kpi-label { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.kpi-value { font-size: 24px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.kpi-sub { font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-ok .kpi-value { color: var(--ok-ink); }
+.kpi-warn .kpi-value { color: var(--warn-ink); }
+.kpi-fail .kpi-value { color: var(--fail-ink); }
+
+/* Components with their uptime bars, Statuspage's layout. */
+#components { display: grid; gap: 0 14px; }
+@media (min-width: 900px) { #components { grid-template-columns: 1fr 1fr; align-items: start; } }
+.comps { display: grid; gap: 4px; }
+.comp { padding: 6px 6px 4px; border-radius: 10px; }
+.comp-head { all: unset; box-sizing: border-box; width: 100%; cursor: pointer; display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.comp-name { flex: 1; min-width: 0; font-weight: 600; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.comp-pct { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.comp-note { display: block; min-height: 1.2em; }
+.bars { display: block; width: 100%; height: 26px; }
+.bar-day { cursor: pointer; }
+.day-ok { fill: var(--ok); }
+.day-warn { fill: var(--warn); }
+.day-fail { fill: var(--fail); }
+.day-nodata { fill: var(--line); }
+.bars-legend { display: flex; justify-content: space-between; padding: 2px 6px 4px; }
+
+/* Active incidents and the incident log. */
+.incident-list { display: grid; gap: 6px; }
+.incident {
+  all: unset; box-sizing: border-box; width: 100%; cursor: pointer;
+  display: flex; flex-direction: column; gap: 3px; padding: 9px 10px; border-radius: 11px; background: var(--fill);
+}
+.incident:active { opacity: .7; }
+.incident-top { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.incident-summary { font-size: 14px; overflow-wrap: anywhere; }
+
+/* Services: one card per app. */
+#services { display: grid; gap: 0 14px; }
+@media (min-width: 900px) { #services { grid-template-columns: 1fr 1fr; align-items: start; } }
+.svc { padding: 12px; }
+.svc-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.svc-head h2 { margin: 0; font-size: 18px; font-weight: 700; color: var(--ink); text-transform: none; letter-spacing: -.01em; }
+.svc-now { margin-left: auto; font-weight: 600; font-variant-numeric: tabular-nums; }
+.svc-fail .svc-now { color: var(--fail-ink); }
+.svc-slo { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.svc-slo > div { display: flex; flex-direction: column; }
+.svc-big { font-size: 28px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.svc-budget { margin-bottom: 10px; }
+.meter { display: block; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 4px; }
+.meter-fill { display: block; height: 100%; border-radius: 4px; background: var(--off); }
+.meter-ok { background: var(--ok); }
+.meter-warn { background: var(--warn); }
+.meter-fail { background: var(--fail); }
+.stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 0 0 10px; }
+.stat { background: var(--fill); border-radius: 10px; padding: 6px 7px; min-width: 0; }
+.stat dt { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.stat dd { margin: 0; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stat-warn dd { color: var(--warn-ink); }
+.stat-fail dd { color: var(--fail-ink); }
+.svc .row-actions { margin-top: 10px; }
+.svc .btn { font-size: 15px; padding: 9px 12px; }
+
+/* Charts (charts.js). */
+.chart-caption { margin-bottom: 2px; }
+.chart-box { min-height: 24px; }
+.chart { display: block; width: 100%; height: 64px; }
+.chart-line { fill: none; stroke: var(--tint); stroke-width: 1.6; stroke-linejoin: round; }
+.chart-area { fill: color-mix(in srgb, var(--tint) 14%, transparent); }
+.chart-objective { stroke: var(--warn); stroke-width: .6; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.chart-empty { padding: 18px 0; text-align: center; }
+.strip-ok { fill: var(--ok); }
+.strip-warn { fill: var(--warn); }
+.strip-fail { fill: var(--fail); }
+.strip-off, .strip-unknown { fill: var(--line); }
+.sheet .chart-box { margin-bottom: 8px; }
+
+/* Incidents tab. */
+.segmented { display: flex; background: var(--fill); border-radius: 9px; padding: 2px; margin-bottom: 12px; }
+.segmented button { flex: 1; border: 0; background: none; padding: 6px 4px; border-radius: 7px; font-size: 13px; font-weight: 500; cursor: pointer; }
+.segmented button[aria-selected="true"] { background: var(--card); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.plain-list { list-style: none; margin: 0; padding: 0 4px; }
+.plain-list li { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: .5px solid var(--line); font-size: 14px; }
+.plain-list li:first-child { border-top: 0; }
+.card > p { margin: 4px; }
+
+/* An incident's timeline: a line down the left with a dot per event. */
+.timeline { list-style: none; margin: 8px 0 0; padding: 0 0 0 16px; border-left: 2px solid var(--line); }
+.tl { position: relative; display: grid; grid-template-columns: auto 1fr; gap: 0 8px; padding: 0 0 12px 4px; }
+.tl::before { content: ""; position: absolute; left: -22px; top: 4px; width: 10px; height: 10px; border-radius: 50%; background: var(--off); }
+.tl-detected::before, .tl-opened::before { background: var(--fail); }
+.tl-notified::before { background: var(--tint); }
+.tl-acknowledged::before, .tl-silenced::before { background: var(--warn); }
+.tl-resolved::before { background: var(--ok); }
+.tl-kind { font-weight: 600; font-size: 14px; }
+.tl-text { grid-column: 1 / -1; overflow-wrap: anywhere; }
+
+/* Form fields in the sheet (maintenance window). */
+.field { display: flex; flex-direction: column; gap: 4px; margin: 10px 0; font-size: 13px; color: var(--muted); }
+.field select, .field input {
+  font: inherit; font-size: 16px; color: var(--ink); background: var(--fill);
+  border: .5px solid var(--line); border-radius: 10px; padding: 10px 12px;
+}

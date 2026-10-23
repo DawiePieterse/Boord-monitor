@@ -2,7 +2,7 @@
 
 The same code runs in two places, chosen by MONITOR_ROLE:
 
-  farm    (the default) - on the farm PC, beside the six apps it watches.
+  farm    (the default) - on the farm PC, beside the five apps it watches.
           It can see everything local: the ports, the scheduled tasks, the
           watchdog log, the disk, and what `tailscale serve` is publishing.
           It is also the only one that can restart anything. What it cannot
@@ -32,19 +32,24 @@ if ROLE not in ("farm", "remote"):
 DATA_DIR = os.environ.get("MONITOR_DATA_DIR", os.path.join(REPO_ROOT, "data"))
 os.makedirs(DATA_DIR, exist_ok=True)
 
-# Clear of Boord 8000, Owner 8010, Notes 8020, Kudde 8030, Labour 8040,
-# Packhouse 8060.
+# Clear of Boord 8000, Owner 8010, Notes 8020, Kudde 8030, Labour 8040, Packhouse 8060.
 # Bound to 127.0.0.1 by the installer and published by `tailscale serve
 # --https=8050`, the same as every sibling.
 PORT = int(os.environ.get("MONITOR_PORT", "8050"))
 
 FRONTEND_DIR = os.path.join(REPO_ROOT, "frontend")
 
-# Boord's checkout. The monitor reads data\watchdog.log from it and, for the
-# restart button, runs its watchdog.ps1 - one restart implementation on the
-# PC, not two that could disagree about whether an update is in progress.
+# Boord's checkout, for its database only: the device tiles read when each
+# tablet last sent a crate from Boord's data\boord.db, read-only.
 BOORD_DIR = os.path.abspath(os.environ.get(
     "MONITOR_BOORD_DIR", os.path.join(REPO_ROOT, "..", "Boord")))
+
+# The watchdog and the heartbeat: scheduled tasks that run these scripts from
+# this repo (Boord's until 2.0). The watchdog's log is the monitor's record
+# of what it restarted, and its -Restart is what the Restart button runs.
+WATCHDOG_PS1 = os.path.join(REPO_ROOT, "watchdog.ps1")
+HEARTBEAT_PS1 = os.path.join(REPO_ROOT, "heartbeat.ps1")
+WATCHDOG_LOG = os.path.join(DATA_DIR, "watchdog.log")
 
 
 def _find_tailscale() -> str:

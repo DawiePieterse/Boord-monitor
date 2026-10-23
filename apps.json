@@ -1,0 +1,35 @@
+{
+  "_comment": [
+    "The apps on the farm PC: the ONE table. backend/apps.py, watchdog.ps1 and heartbeat.ps1 all read this file.",
+    "Before Monitor 2.0 there were three copies (apps.py, and Boord's watchdog.ps1 and heartbeat.ps1) that had to be kept in step by hand.",
+    "name     - what people call it; also the -Restart name for watchdog.ps1. Never rename one lightly: data\\watchdog.log lines carry it.",
+    "port     - where its uvicorn binds on 127.0.0.1.",
+    "ts_port  - its `tailscale serve --https=` port, which the Published ports check compares against the live mapping.",
+    "task     - the scheduled task its install.ps1 registers. No task on this PC = not installed here, so skipped, not down.",
+    "health   - the path that proves the process is up. Any HTTP answer counts (watchdog's rule).",
+    "version  - its /api/version, or null. Read for information only, never for up/down. Null for Kudde: it answers only requests that came over Tailscale.",
+    "path     - where a person opens it.",
+    "updater  - its update script's file name. The watchdog stands down while it runs.",
+    "aliases  - extra names heartbeat_url.txt may use for it (the key and the name without spaces always work).",
+    "self     - true for this monitor: watched and restarted like the others, but not probed as an app on its own dashboard."
+  ],
+  "apps": [
+    {"key": "boord", "name": "Boord", "port": 8000, "ts_port": 443, "task": "Boord Server",
+     "health": "/", "version": "/api/version", "path": "/", "updater": "update_server.bat", "aliases": []},
+    {"key": "owner", "name": "Boord Owner", "port": 8010, "ts_port": 8443, "task": "Boord Owner Server",
+     "health": "/", "version": "/api/version", "path": "/", "updater": "update_owner_server.bat", "aliases": []},
+    {"key": "notes", "name": "Boord Notes", "port": 8020, "ts_port": 9443, "task": "Boord Notes Server",
+     "health": "/api/health", "version": "/api/version", "path": "/app/", "updater": "update_server.bat", "aliases": []},
+    {"key": "kudde", "name": "Kudde", "port": 8030, "ts_port": 8030, "task": "Kudde Server",
+     "health": "/healthz", "version": null, "path": "/", "updater": "update_server.bat", "aliases": []},
+    {"key": "labour", "name": "Boord Labour", "port": 8040, "ts_port": 8040, "task": "Boord Labour Server",
+     "health": "/", "version": "/api/version", "path": "/", "updater": "update_labour_server.bat", "aliases": []},
+    {"key": "packhouse", "name": "Boord Packhouse", "port": 8060, "ts_port": 8060, "task": "Boord Packhouse Server",
+     "health": "/", "version": "/api/version", "path": "/", "updater": "update_packhouse_server.bat", "aliases": []},
+    {"key": "monitor", "name": "Boord Monitor", "port": 8050, "ts_port": 8050, "task": "Boord Monitor Server",
+     "health": "/api/version", "version": "/api/version", "path": "/", "updater": "update_monitor_server.bat",
+     "aliases": [], "self": true}
+  ],
+  "watchdog_task": "Boord Watchdog",
+  "heartbeat_task": "Boord Heartbeat"
+}

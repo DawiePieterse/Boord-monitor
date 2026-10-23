@@ -1,8 +1,8 @@
 """The restart button.
 
-It does not restart anything itself. It runs Boord's own watchdog.ps1 with
-`-Restart "<app>"`, which goes through exactly the steps the watchdog's
-automatic restarts do:
+It does not restart anything itself. It runs the watchdog (watchdog.ps1, in
+this repo since 2.0) with `-Restart "<app>"`, which goes through exactly the
+steps the watchdog's automatic restarts do:
   - stands down while update_server.bat, an installer or Alembic is running
     (a server started on top of a half-migrated database is worse than one
     that is down);
@@ -30,7 +30,7 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 
 def watchdog_path() -> str:
-    return os.path.join(config.BOORD_DIR, "watchdog.ps1")
+    return config.WATCHDOG_PS1
 
 
 def _run(app: apps.App) -> None:
@@ -41,7 +41,7 @@ def _run(app: apps.App) -> None:
         # Two minutes: stop_server.ps1 waits up to 20 s for the port, and the
         # watchdog then gives a cold start a full minute to run migrations.
         p = subprocess.run(cmd, capture_output=True, timeout=150, creationflags=_NO_WINDOW,
-                           cwd=config.BOORD_DIR)
+                           cwd=config.REPO_ROOT)
         out = (p.stdout + p.stderr).decode("utf-8", "replace")
         state = {0: "done", 2: "refused"}.get(p.returncode, "failed")
     except subprocess.TimeoutExpired:
@@ -62,8 +62,7 @@ def start(app_key: str) -> dict:
     if config.ROLE != "farm":
         raise ValueError("Restarts can only be done by the monitor on the farm PC")
     if not os.path.exists(watchdog_path()):
-        raise ValueError(f"Boord's watchdog.ps1 is not at {watchdog_path()} - "
-                         "set MONITOR_BOORD_DIR to Boord's folder")
+        raise ValueError(f"watchdog.ps1 is not at {watchdog_path()}")
     with _lock:
         if job and job.get("state") == "running":
             raise ValueError(f"{job['name']} is still restarting - wait for it to finish")
