@@ -8,6 +8,41 @@ Boord Monitor watches the farm PC: the five sibling apps (Boord 8000, Owner 8010
 
 It shares no database or code with the siblings. It does call into Boord's repo: it reads Boord's `data/watchdog.log` and runs Boord's `watchdog.ps1 -Restart "<Name>"` (`MONITOR_BOORD_DIR`).
 
+## The Boord suite
+
+This app is one of six that run together on the farm PC (`bekfontein-server`), each its own repo, process, port and database. They are reached only over Tailscale, and each binds `127.0.0.1` and is published with `tailscale serve`. The same section is in every app's `CLAUDE.md`. When a fact here changes, change it in all six.
+
+| App | Repo (`DawiePieterse/…`) | What it does | Port | Tailnet address | Mac folder | Farm PC folder |
+|---|---|---|---|---|---|---|
+| Boord | `Boord` | Harvest capture and picker pay per kg: field tablets, pack-house receiving, admin office. The hub. | 8000 | `https://bekfontein-server.taile32cb0.ts.net/` | `~/Documents/Projects/Boord` | `C:\Boord` |
+| Boord Owner | `boordowner` | The owner's view: season vs history, weather, risk, crop estimate, optional AI. | 8010 | `https://bekfontein-server.taile32cb0.ts.net:8443/` | `~/Documents/Projects/BoordOwner` | `C:\BoordOwner` |
+| Boord Notes | `boord-notes` | Private farm notebook for Andre and his son, offline-first, optional AI. | 8020 | `https://bekfontein-server.taile32cb0.ts.net:9443/` | `~/Documents/Projects/BoordNotes` | `C:\bekfontein-farm-notebook` |
+| Kudde | `Kudde` | Cattle records: animals and their events. | 8030 | `https://bekfontein-server.taile32cb0.ts.net:8030/` | `~/Documents/Projects/Kudde` | `C:\Kudde` |
+| Boord Labour | `Boord-labour` | Packhouse time clock: badge scans at the door, hourly pay with overtime. | 8040 | `https://bekfontein-server.taile32cb0.ts.net:8040/` | `~/Documents/Projects/Boord-labour` | `C:\Boord-labour` |
+| **Boord Monitor** (this app) | `Boord-monitor` | Watches the PC and the other five apps; Web Push alerts and a Restart button. | 8050 | `https://bekfontein-server.taile32cb0.ts.net:8050/` | `~/Documents/Projects/Boord-monitor` | `C:\boord-monitor` |
+
+**How they depend on each other:**
+- **Boord is the hub.** Its `data/boord.db` is opened read-only by Owner (harvest, lots, blocks, suppliers), Labour (the worker register, and Boord's `data/photos` for faces) and Monitor (tablet station, last sync and outbox).
+  - Boord is that database's only writer and migrates it at startup.
+  - Owner and Labour refuse to boot if a column they read disappears. A Boord migration that drops or renames a column needs those apps updated in step.
+- **Labour's badges are Boord's.** The badge QR holds exactly `worker.id` (`Boord/frontend/admin/print-badge.html`), and Labour vendors Boord's `frontend/shared/`.
+- **Owner asks Notes.** The "Ask the farm notes" bridge calls Notes' `/api/ai/ask` at `OWNER_NOTES_URL` (`http://127.0.0.1:8020`) and can share Notes' `data/anthropic_key.txt`.
+- **Boord keeps the others running.** Boord's `watchdog.ps1` (restarts an app that stops answering) and `heartbeat.ps1` cover all six.
+  - Their app table (name, port, task, health path) must match Monitor's `backend/apps.py` and the port table above. Change them together.
+  - Monitor reads Boord's `data/watchdog.log`, and its Restart button runs Boord's `watchdog.ps1 -Restart "<Name>"`.
+- **Monitor watches everything.** It shows each app's up/down state and `/api/version`, Tailscale and the PC, and pushes an alert after three failed checks in a row.
+  - Every app's `/api/version` keeps the same field names (`tag`, `state`, `frontend_version`), because Monitor and the heartbeat read them all.
+  - An off-site copy of the monitor on the owner's Mac alerts when the whole farm PC is unreachable.
+- **Kudde and Notes stand alone.** No other app reads their data. They are only watched and restarted.
+
+**What they share by convention, not code:**
+- One release key: fingerprint `67C64CFDD584DD140E58AF6E329C9B9DD0562A9D` in each app's `data\release_key.fpr`.
+- Releases are signed tags, made from an up-to-date `main` on the Mac and installed by each app's updater on the farm PC.
+- `stop_server.ps1` stops each server, never a bare `schtasks /end`. Labour's copy is the reference.
+- Each installer adds a Git `safe.directory` exception so SYSTEM's Git can read the repo folder.
+- Python 3.9-compatible code, plain JS with no CDNs (the phones are tailnet-only), and `VERSION` plus the service-worker `CACHE` bumped with every frontend change.
+- Fixes to the copied deployment files (`install.ps1`, the updaters, `stop_server.ps1`, `release.sh`) flow between the repos.
+
 ## Commands
 
 All backend commands run from `backend/`. Keep code Python 3.9-compatible (the farm's minimum): no `X | None`, no `match`.
@@ -77,6 +112,75 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
   - **The smoke test** fails if the phone layout needs scrolling, both against the live server and in the `phone-busy` pass. That pass answers `/api/status` from `scripts/fixtures/busy_farm.json`: two problems and 16 devices.
 - **Every push must show a notification** (`service-worker.js`). iOS revokes push for a site that receives a push silently.
 - **Copied from Boord Labour:** `install.ps1`, `update_monitor_server.bat` and `scripts/release.sh`. Keep fixes flowing between the copies. The updater's import list must equal `requirements.txt` (a test checks this).
+- **`install.ps1` adds the repo folder to Git's machine-wide `safe.directory`.** The monitor runs as SYSTEM, and the folder belongs to the admin account that cloned it, so Git refused it as "dubious ownership" and `/api/version` reported `"tag": null`. Boord Owner's and Boord Notes' installers carry the same block, so change all three together.
+- **Releases are signed tags made by the owner, from an up-to-date `main`.** `release.sh` checks that `VERSION` matches the tag. Run `git pull --ff-only origin main` first anyway: a stale clone is how Boord Notes' `v2.16` ended up on a months-old commit.
+- **The off-site watcher** runs on the owner's Mac from `~/Documents/Projects/Boord-monitor` (launchd `com.boord.monitor-remote`). Moving that folder breaks both the launchd job and the `.venv`. After a move, delete `backend/.venv` and re-run `remote/install_remote.sh` with the same URL and token.
+
+## Installing and deploying
+
+### Where it lives
+
+| | |
+|---|---|
+| Your Mac (the only clone to release from) | `~/Documents/Projects/Boord-monitor` |
+| Farm PC folder | `C:\boord-monitor` |
+| Farm PC scheduled task | "Boord Monitor Server", runs as SYSTEM at boot |
+| Port on the farm PC | `127.0.0.1:8050` |
+| Address on the tailnet | `https://bekfontein-server.taile32cb0.ts.net:8050/` |
+| Off-site watcher | your Mac, from the same folder, launchd job `com.boord.monitor-remote` |
+
+### First install on the farm PC (once)
+
+Only for a new PC or a reinstall. An app that is already running is updated, not reinstalled.
+
+1. Open a Command Prompt and clone the repo into the folder above:
+   ```bat
+   git clone https://github.com/DawiePieterse/Boord-monitor.git C:\boord-monitor
+   ```
+2. In `C:\boord-monitor`, double-click **`install.bat`** and accept the administrator prompt. It asks for Boord's folder (for the watchdog and its log) and for the admin PIN (`backend\set_pin.py` changes it later). At the end it prints the remote token for the off-site watcher.
+   It installs Python if needed, builds the app's environment, writes the launcher, registers the scheduled task, reserves the port so Windows can't hand it to Hyper-V, WSL or Docker at boot, and starts the server. Re-running it is safe and keeps the data.
+3. Tell the updater which release key to trust. In the same folder, type it exactly like this, with the redirect first:
+   ```bat
+   >data\release_key.fpr echo 67C64CFDD584DD140E58AF6E329C9B9DD0562A9D
+   ```
+4. Publish it on the tailnet, in a Command Prompt opened as administrator:
+   ```bat
+   tailscale serve --bg --https=8050 http://localhost:8050
+   ```
+5. If the installer did not already add it, let SYSTEM's Git read the folder, as administrator (forward slashes):
+   ```bat
+   git config --system --add safe.directory C:/boord-monitor
+   ```
+6. Check it from your Mac: `curl -s https://bekfontein-server.taile32cb0.ts.net:8050/api/version` should show the release tag.
+
+The off-site watcher is installed on your Mac, not the farm PC, from the folder above:
+```sh
+cd ~/Documents/Projects/Boord-monitor
+read -s "TOKEN?Remote token (hidden): "; echo   # from data\remote_token.txt on the farm PC
+remote/install_remote.sh https://bekfontein-server.taile32cb0.ts.net:8050 "$TOKEN"
+```
+After moving that folder, delete `backend/.venv` and run `install_remote.sh` again with the same URL and token.
+
+### Deploying a change (every release)
+
+Merging to `main` changes nothing on the farm. A release is a signed tag, and the farm PC installs it when its updater runs.
+
+1. **Merge the PR on GitHub.** A frontend change must already bump `VERSION` in `frontend/shared/api.js` and the service worker's `CACHE`.
+2. **On your Mac, bring the clone up to date.** This step is what stops a tag landing on an old commit:
+   ```sh
+   cd ~/Documents/Projects/Boord-monitor && git checkout main && git pull --ff-only origin main
+   git log -1 --format='%h %s'                  # the merge you expect
+   grep -m1 'VERSION:' frontend/api.js   # the version you are releasing
+   ```
+3. **Sign and push the tag** (`vX.Y` must equal `VERSION`):
+   ```sh
+   scripts/release.sh vX.Y && git push origin vX.Y
+   ```
+   Never move or reuse a released tag. Fix a wrong one with the next version.
+4. **On the farm PC**, in `C:\boord-monitor`, double-click **`update_monitor_server.bat`**. It verifies the signature, stops the server with `stop_server.ps1`, installs dependencies, and starts it again. If it stops with an error, nothing has changed. Read the message; never check the tag out by hand.
+5. **If the release changed `install.ps1`** (its notes say "run install.bat once more"), double-click `install.bat` as well. The updater does not rewrite the launcher or the task.
+6. **Check from your Mac:** `curl -s https://bekfontein-server.taile32cb0.ts.net:8050/api/version` should show `"tag":"vX.Y","state":"release"`.
+7. **Close and reopen the dashboard on each phone so it loads the new version.**
 
 ## Conventions
 
