@@ -81,6 +81,72 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
 - **Releases are signed tags made by the owner, from an up-to-date `main`.** `release.sh` checks that `VERSION` matches the tag. Run `git pull --ff-only origin main` first anyway: a stale clone is how Boord Notes' `v2.16` ended up on a months-old commit.
 - **The off-site watcher** runs on the owner's Mac from `~/Documents/Projects/Boord-monitor` (launchd `com.boord.monitor-remote`). Moving that folder breaks both the launchd job and the `.venv`. After a move, delete `backend/.venv` and re-run `remote/install_remote.sh` with the same URL and token.
 
+## Installing and deploying
+
+### Where it lives
+
+| | |
+|---|---|
+| Your Mac (the only clone to release from) | `~/Documents/Projects/Boord-monitor` |
+| Farm PC folder | `C:\boord-monitor` |
+| Farm PC scheduled task | "Boord Monitor Server", runs as SYSTEM at boot |
+| Port on the farm PC | `127.0.0.1:8050` |
+| Address on the tailnet | `https://bekfontein-server.taile32cb0.ts.net:8050/` |
+| Off-site watcher | your Mac, from the same folder, launchd job `com.boord.monitor-remote` |
+
+### First install on the farm PC (once)
+
+Only for a new PC or a reinstall. An app that is already running is updated, not reinstalled.
+
+1. Open a Command Prompt and clone the repo into the folder above:
+   ```bat
+   git clone https://github.com/DawiePieterse/Boord-monitor.git C:\boord-monitor
+   ```
+2. In `C:\boord-monitor`, double-click **`install.bat`** and accept the administrator prompt. It asks for Boord's folder (for the watchdog and its log) and for the admin PIN (`backend\set_pin.py` changes it later). At the end it prints the remote token for the off-site watcher.
+   It installs Python if needed, builds the app's environment, writes the launcher, registers the scheduled task, reserves the port so Windows can't hand it to Hyper-V, WSL or Docker at boot, and starts the server. Re-running it is safe and keeps the data.
+3. Tell the updater which release key to trust. In the same folder, type it exactly like this, with the redirect first:
+   ```bat
+   >data\release_key.fpr echo 67C64CFDD584DD140E58AF6E329C9B9DD0562A9D
+   ```
+4. Publish it on the tailnet, in a Command Prompt opened as administrator:
+   ```bat
+   tailscale serve --bg --https=8050 http://localhost:8050
+   ```
+5. If the installer did not already add it, let SYSTEM's Git read the folder, as administrator (forward slashes):
+   ```bat
+   git config --system --add safe.directory C:/boord-monitor
+   ```
+6. Check it from your Mac: `curl -s https://bekfontein-server.taile32cb0.ts.net:8050/api/version` should show the release tag.
+
+The off-site watcher is installed on your Mac, not the farm PC, from the folder above:
+```sh
+cd ~/Documents/Projects/Boord-monitor
+read -s "TOKEN?Remote token (hidden): "; echo   # from data\remote_token.txt on the farm PC
+remote/install_remote.sh https://bekfontein-server.taile32cb0.ts.net:8050 "$TOKEN"
+```
+After moving that folder, delete `backend/.venv` and run `install_remote.sh` again with the same URL and token.
+
+### Deploying a change (every release)
+
+Merging to `main` changes nothing on the farm. A release is a signed tag, and the farm PC installs it when its updater runs.
+
+1. **Merge the PR on GitHub.** A frontend change must already bump `VERSION` in `frontend/shared/api.js` and the service worker's `CACHE`.
+2. **On your Mac, bring the clone up to date.** This step is what stops a tag landing on an old commit:
+   ```sh
+   cd ~/Documents/Projects/Boord-monitor && git checkout main && git pull --ff-only origin main
+   git log -1 --format='%h %s'                  # the merge you expect
+   grep -m1 'VERSION:' frontend/api.js   # the version you are releasing
+   ```
+3. **Sign and push the tag** (`vX.Y` must equal `VERSION`):
+   ```sh
+   scripts/release.sh vX.Y && git push origin vX.Y
+   ```
+   Never move or reuse a released tag. Fix a wrong one with the next version.
+4. **On the farm PC**, in `C:\boord-monitor`, double-click **`update_monitor_server.bat`**. It verifies the signature, stops the server with `stop_server.ps1`, installs dependencies, and starts it again. If it stops with an error, nothing has changed. Read the message; never check the tag out by hand.
+5. **If the release changed `install.ps1`** (its notes say "run install.bat once more"), double-click `install.bat` as well. The updater does not rewrite the launcher or the task.
+6. **Check from your Mac:** `curl -s https://bekfontein-server.taile32cb0.ts.net:8050/api/version` should show `"tag":"vX.Y","state":"release"`.
+7. **Close and reopen the dashboard on each phone so it loads the new version.**
+
 ## Conventions
 
 Comments are long on purpose. They explain *why*, usually a farm constraint: one person, a phone in an orchard, a PC nobody administers. Keep that style.
