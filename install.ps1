@@ -89,6 +89,33 @@ try {
     Write-Step "Checking for Git..."
     if (Get-Command git -ErrorAction SilentlyContinue) {
         Write-Ok "Found Git"
+
+        # The server runs as SYSTEM, but this folder belongs to whoever cloned
+        # it, and Git refuses a repository owned by another user ("dubious
+        # ownership"). So /api/version's git describe came back empty, the
+        # tag read null, and Boord's heartbeat reported a monitor that could
+        # not say what release it was on - the one thing it is asked. Trust
+        # this one folder, machine-wide so SYSTEM reads it too. The owner is
+        # the PC's admin account, which already controls everything here.
+        # Not fatal: the tag is information, never up/down.
+        try {
+            $safeDir = $RepoRoot.TrimEnd('\') -replace '\\', '/'
+            $trusted = @(& git config --system --get-all safe.directory) | ForEach-Object { $_.Trim() }
+            if ($trusted -contains $safeDir -or $trusted -contains "*") {
+                Write-Ok "Git already trusts $safeDir for SYSTEM"
+            } else {
+                & git config --system --add safe.directory $safeDir
+                if ($LASTEXITCODE -eq 0) {
+                    Write-Ok "Git now trusts $safeDir for SYSTEM (safe.directory)"
+                } else {
+                    Write-Warn "Could not add $safeDir to Git's safe.directory. The monitor runs,"
+                    Write-Warn "but its version shows no tag. Fix by hand, as administrator:"
+                    Write-Warn "    git config --system --add safe.directory $safeDir"
+                }
+            }
+        } catch {
+            Write-Warn "Could not check Git's safe.directory: $_"
+        }
     } else {
         Write-Warn "Git is not installed. The server will still run, but update_monitor_server.bat"
         Write-Warn "cannot fetch updates without it. Get it from https://git-scm.com/download/win"
