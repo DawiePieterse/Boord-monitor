@@ -47,6 +47,11 @@ log = logging.getLogger("monitor")
 
 STATE_FILE = os.path.join(config.DATA_DIR, "state.json")
 MAX_EVENTS = 200
+# How long a check may go unreported before its streak and incident are
+# closed out as "no longer checked" (see the end of evaluate). A day: long
+# enough to outlast any Tailscale outage the watchdog will restart its way
+# out of, short enough that a retired tablet is off the badge by tomorrow.
+GONE_AFTER_S = 24 * 3600
 
 _lock = threading.Lock()
 latest: dict = {}
@@ -126,6 +131,21 @@ def _silenced(c: dict, active: List[dict]) -> Optional[dict]:
     return next((x for x in active if store.matches(x["match"], c)), None)
 
 
+def _keep(fn, *args, **kwargs):
+    """One incident write to history.db, which may fail: the disk is full,
+    or the file is locked by a backup agent. The alert decisions must not
+    fail with it - a full disk is exactly when pc.disk goes red and the
+    phone has to hear about it - so a failed write is logged and the
+    streak carries on as if there were no incident record. None stands for
+    "could not be done" (an incident with no id, a state that can't be
+    read)."""
+    try:
+        return fn(*args, **kwargs)
+    except Exception:  # noqa: BLE001 - the history is a record, not the alert path
+        log.exception("incident record failed (%s)", getattr(fn, "__name__", fn))
+        return None
+
+
 def evaluate(results: List[dict], now: dt.datetime, silences: Optional[List[dict]] = None) -> dict:
     """Update the streaks and incidents from one run's results. Returns what
     to push: {"new": [...], "remind": [...], "recovered": [...]}. Also
@@ -136,6 +156,7 @@ def evaluate(results: List[dict], now: dt.datetime, silences: Optional[List[dict
     silences = silences or []
     for c in results:
         s = _streaks.get(c["id"]) or {"status": None, "fails": 0, "alerted": False, "last_alert": None}
+        s.pop("missing_since", None)  # reported this run, so not on its way out
         if s["status"] is not None and s["status"] != c["status"]:
             _events.append({"at": _stamp(now), "id": c["id"], "label": c["label"],
                             "from": s["status"], "to": c["status"], "summary": c["summary"]})
@@ -146,40 +167,78 @@ def evaluate(results: List[dict], now: dt.datetime, silences: Optional[List[dict
             if s["fails"] == 1 or not s.get("started"):
                 s["started"] = t
             # A streak carried over from before 2.0 has no incident yet: it
-            # gets one now, without telling the phone a second time.
+            # gets one now, without telling the phone a second time. The
+            # alerting below keys off the streak, not off the incident, so
+            # a history.db that can't be written (see _keep) still pages.
             if s["fails"] >= config.FAIL_AFTER and not s.get("incident"):
-                s["incident"] = store.open_incident(c, s["started"], t)
-            if s.get("incident"):
-                if prev_status == "fail" and s.get("summary") and s["summary"] != c["summary"]:
-                    store.add_event(s["incident"], t, "update", c["summary"], summary=c["summary"])
+                s["incident"] = _keep(store.open_incident, c, s["started"], t)
+            if s["fails"] >= config.FAIL_AFTER:
+                inc = s.get("incident")
+                if inc and prev_status == "fail" and s.get("summary") and s["summary"] != c["summary"]:
+                    _keep(store.add_event, inc, t, "update", c["summary"], summary=c["summary"])
                 silence = _silenced(c, silences)
                 pageable = c.get("alert", True) and silence is None
                 if pageable and not s["alerted"]:
                     s["alerted"], s["last_alert"] = True, _stamp(now)
                     new.append(c)
-                    store.add_event(s["incident"], t, "notified", "Phones told.")
+                    if inc:
+                        _keep(store.add_event, inc, t, "notified", "Phones told.")
                 elif pageable and s["last_alert"]:
                     last = dt.datetime.fromisoformat(s["last_alert"])
                     if (now - last).total_seconds() >= config.REMIND_EVERY_S:
                         # Acknowledged means someone is on it: no more
-                        # reminders, but it stays open until it is fixed.
-                        if store.incident_state(s["incident"]) == "open":
+                        # reminders, but it stays open until it is fixed. A
+                        # state that can't be read (None) still reminds: a
+                        # reminder too many beats a broken app nobody hears of.
+                        state = _keep(store.incident_state, inc) if inc else None
+                        if state in (None, "open"):
                             s["last_alert"] = _stamp(now)
                             remind.append(c)
-                            store.add_event(s["incident"], t, "notified", "Reminder sent: still failing.")
-                elif silence is not None and not s.get("silence_noted"):
+                            if inc:
+                                _keep(store.add_event, inc, t, "notified", "Reminder sent: still failing.")
+                elif silence is not None and inc and not s.get("silence_noted"):
                     s["silence_noted"] = True
-                    store.add_event(s["incident"], t, "silenced",
-                                    f"No push: silenced until {silence['ends_at']} UTC ({silence['reason']}).")
+                    _keep(store.add_event, inc, t, "silenced",
+                          f"No push: silenced until {silence['ends_at']} UTC ({silence['reason']}).")
             s["summary"] = c["summary"]
         else:
             if s.get("incident"):
-                store.resolve(s["incident"], t, f"Recovered: {c['summary']}")
+                _keep(store.resolve, s["incident"], t, f"Recovered: {c['summary']}")
             if s["alerted"]:
                 recovered.append(c)
             s.update({"fails": 0, "alerted": False, "last_alert": None, "incident": None,
                       "started": None, "summary": None, "silence_noted": False})
         _streaks[c["id"]] = s
+    # A check that this run no longer reports - a folder taken out of
+    # drive_backups.txt while its backup was overdue, a tablet retired from
+    # the tailnet - can never recover on its own: nothing would ever reset
+    # its streak, so its incident would stay open and the icon's badge would
+    # count it for ever. Close it out here. No push for it: the check was
+    # not fixed, it was taken away, and "fixed" would be a lie on the lock
+    # screen; the next push or the next open of the dashboard sets the badge
+    # right. Dropping the streak also keeps state.json from growing with
+    # every device that ever appeared on the tailnet.
+    #
+    # Not on the first run it is missing, though. A check can be absent for
+    # a run without having been removed: when `tailscale status` itself
+    # fails, ts.serve and ts.cert are not reported at all, and closing an
+    # open ts.serve incident during a Tailscale blip - then paging for it
+    # again three runs after Tailscale came back - would turn one problem
+    # into a flapping incident log. So a missing check keeps its streak for
+    # GONE_AFTER_S first; a retired device or a removed folder is gone for
+    # good, so waiting a day costs nothing there.
+    seen = {c["id"] for c in results}
+    for cid in [k for k in _streaks if k not in seen]:
+        s = _streaks[cid]
+        if not s.get("missing_since"):
+            s["missing_since"] = _stamp(now)
+            continue
+        if (now - dt.datetime.fromisoformat(s["missing_since"])).total_seconds() < GONE_AFTER_S:
+            continue
+        gone = _streaks.pop(cid)
+        if gone.get("incident"):
+            _keep(store.resolve, gone["incident"], t,
+                  "No longer checked: the check was removed from the monitor's configuration.")
     del _events[:-MAX_EVENTS]
     return {"new": new, "remind": remind, "recovered": recovered}
 
