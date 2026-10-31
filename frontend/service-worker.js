@@ -6,7 +6,7 @@
 //
 // Bump CACHE together with VERSION in api.js on every frontend change, so
 // installed phones fetch the new files.
-const CACHE = "boord-monitor-v12";
+const CACHE = "boord-monitor-v13";
 const SHELL = ["./", "./index.html", "./app.js", "./api.js", "./charts.js", "./styles.css", "./manifest.json",
   "./icons/icon-192.png"];
 

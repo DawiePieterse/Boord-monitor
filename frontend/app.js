@@ -100,6 +100,7 @@ window.addEventListener("hashchange", showView);
 
 function renderView() {
   if (!last) return;
+  showIncidentBadge();
   const v = currentView();
   if (v === "status") renderStatus();
   else if (v === "services") renderServices();
@@ -158,9 +159,16 @@ function renderActiveIncidents() {
   $("active-incidents").replaceChildren(list.length
     ? card([`Active incidents`, el("span", { class: "meta" }, String(list.length))], el("div", { class: "incident-list" }, list.map(incidentRow)))
     : "");
+}
+
+// The count on the Incidents tab. Set from every render, whichever tab is
+// open: it used to be set only with the Status tab, so a phone left on
+// Checks or Services showed no badge for an incident that opened meanwhile.
+function showIncidentBadge() {
+  const n = ((last && last.incidents) || []).length;
   const badge = $("incident-badge");
-  badge.hidden = !list.length;
-  badge.textContent = String(list.length);
+  badge.hidden = !n;
+  badge.textContent = String(n);
 }
 
 function silenceText(s) {
@@ -477,12 +485,18 @@ function showMaintenance() {
     el("label", { class: "field" }, el("span", {}, "Why"), reason),
     err,
     el("div", { class: "row-actions" },
-      el("button", { class: "btn", type: "button", onclick: async () => {
+      el("button", { class: "btn", type: "button", onclick: async (ev) => {
         if (!session.admin) { $("sheet").close(); if (!(await needAdmin())) return; }
+        // Disabled while the request is out: a second tap on a slow
+        // connection made a second, identical window, each needing its
+        // own End.
+        const btn = ev.currentTarget;
+        btn.disabled = true;
         try {
           await Monitor.api("/api/silences", { method: "POST",
             body: { match: what.value, minutes: Number(howLong.value), reason: reason.value || "maintenance" } });
         } catch (e) {
+          btn.disabled = false;
           if (!$("sheet").open) openSheet(err);
           err.textContent = Monitor.errorText(e);
           err.hidden = false;

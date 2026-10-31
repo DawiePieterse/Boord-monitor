@@ -269,3 +269,57 @@ def test_a_broken_history_never_stops_the_alerts(fake, pushed, monkeypatch):
     fake.down.add(8000)
     run(fake, config.FAIL_AFTER)
     assert titles(pushed) == ["Farm: Boord - problem"]
+
+
+def test_a_broken_incident_record_never_stops_the_alerts(fake, pushed, monkeypatch):
+    """Not just the samples (above): the incident writes evaluate() makes.
+    A full disk fails them too - at the very moment pc.disk goes red and
+    the phone must hear about it - and before 2.1 that exception aborted the
+    run before anything was pushed."""
+    subscribe()
+
+    def boom(*a, **k):
+        raise store.sqlite3.OperationalError("database or disk is full")
+
+    for name in ("open_incident", "add_event", "resolve", "incident_state"):
+        monkeypatch.setattr(store, name, boom)
+    fake.down.add(8000)
+    run(fake, config.FAIL_AFTER)
+    assert titles(pushed) == ["Farm: Boord - problem"]
+    assert monitor.latest["alerting"] == 1
+    # Reminders go out too: an acknowledgement that can't be read is not one.
+    fake.now_value += dt.timedelta(seconds=config.REMIND_EVERY_S)
+    run(fake)
+    assert titles(pushed)[-1] == "Farm: Boord - problem (still)"
+    fake.down.clear()
+    run(fake)
+    assert titles(pushed)[-1] == "Farm: back to normal"
+    assert monitor.latest["alerting"] == 0
+
+
+def test_a_check_that_disappears_is_closed_out(fake, pushed):
+    """A folder taken out of drive_backups.txt while it was failing: nothing
+    would ever reset its streak, so the badge counted it and its incident
+    stayed open for ever."""
+    subscribe()
+    folder = "C:\\Backups\\Boord"
+    with open(config.DRIVE_BACKUPS_FILE, "w") as fh:
+        fh.write(folder + "\n")
+    fake.folders[folder] = ("old.zip", fake.now_value - dt.timedelta(days=10))
+    run(fake, config.FAIL_AFTER)
+    assert titles(pushed) == ["Farm: Boord - problem"]
+    iid = monitor.latest["incidents"][0]["id"]
+    assert monitor.latest["alerting"] == 1
+    import os
+    os.remove(config.DRIVE_BACKUPS_FILE)
+    # One missing run is not removal: a Tailscale blip drops ts.serve and
+    # ts.cert from a run too, and their incidents must ride it out.
+    run(fake)
+    assert monitor.latest["alerting"] == 1
+    assert store.get_incident(iid)["state"] == "open"
+    fake.now_value += dt.timedelta(seconds=monitor.GONE_AFTER_S)
+    run(fake)
+    assert monitor.latest["alerting"] == 0
+    assert monitor.latest["incidents"] == []
+    assert store.get_incident(iid)["state"] == "resolved"
+    assert len(pushed) == 1  # it was taken away, not fixed: no "back to normal"

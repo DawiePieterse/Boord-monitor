@@ -181,6 +181,11 @@ acknowledged, reminders, resolved.
 - A check that is set never to wake anyone (Google Drive in the first half
   hour after a reboot, for example) still opens an incident, marked *not
   paged*, so the record is complete.
+- A check that is taken away rather than fixed (a folder removed from
+  `drive_backups.txt` while its backup was overdue) has its incident closed
+  as "no longer checked" once it has been missing for a day, with no "back
+  to normal" push. A day, so a Tailscale blip that hides a check for a few
+  runs does not close and later re-open its incident.
 
 At the top, for the last 7, 30 or 90 days:
 
