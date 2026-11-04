@@ -203,7 +203,14 @@ Merging to `main` changes nothing on the farm. A release is a signed tag, and th
 2. On the Mac, run `scripts/deploy.sh vX.Y`. It asks nothing except GnuPG's passphrase prompt. It stops at the first of these that fails and changes nothing: tag not shaped like `vX.Y`; tree not clean; not on `main`; `main` not fast-forwardable from origin; `VERSION` not equal to the tag; tag already existing locally or on origin; release key absent. Then it pushes `main` if ahead, signs the tag, verifies the signature is the release key's (and deletes the tag if not), pushes the tag, and prints the farm PC steps.
 3. Report the tag and remind the owner: run the updater on the farm PC (and `install.bat` if the release changed `install.ps1`), then fully close and reopen the app on every phone and tablet.
 
-In a session without the key (Claude Code on the web, any cloud container), do step 1, then hand over the `scripts/deploy.sh vX.Y` command to run on the Mac. Never push an unsigned tag: the updater picks the newest `v*` tag and stops when its signature fails, which blocks this app's updates on the farm PC until a higher signed tag lands. `deploy.sh` is the same file in every Boord repo apart from the configuration block at its top; a fix to it flows to all seven.
+**In a cloud session** (Claude Code on the web or the phone app, any cloud container), the key isn't there, but the owner's Mac can be. "Deploy" is the same promise there, so reach the Mac rather than hand the job back:
+
+1. Do step 1 in the cloud session: the tests, `VERSION` and `CACHE`. Merge the PR if the owner asked for it.
+2. Call `list_computer_folders` and look for this app's Mac folder (the "Mac folder" column of the suite table above, matched by its last part, e.g. `Boord-packhouse`) on the Mac, online.
+3. If it is there, call `request_computer_folder` for it. The owner approves it on a trusted device; that approval is the only question asked. Once attached, run step 2 there, in that folder: `scripts/deploy.sh vX.Y`. It pulls `main` itself, so the merge just made is what gets signed. Then step 3. If it refuses because that clone isn't clean or isn't on `main`, report what it said and stop: it is the owner's working copy, so never stash, reset or switch branches there without asking.
+4. If the folder isn't listed, is offline, or the request is refused or not answered, say why in one line and hand over `scripts/deploy.sh vX.Y` to run on the Mac. Folders are shared from the Claude desktop app on the Mac (Settings, Claude Code, Remote Control); the seven app folders in `~/Documents/Projects` are the ones to share.
+
+Never sign anywhere but the Mac, and never push an unsigned tag: the updater picks the newest `v*` tag and stops when its signature fails, which blocks this app's updates on the farm PC until a higher signed tag lands. `deploy.sh` is the same file in every Boord repo apart from the configuration block at its top; a fix to it flows to all seven.
 
 ## Conventions
 
