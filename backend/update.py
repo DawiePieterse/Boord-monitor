@@ -137,3 +137,81 @@ def start(app_key: str, by: str = "") -> dict:
             _write(STATUS_FILE, job)
             raise ValueError(str(e))
     return job
+
+
+# --- the nightly update --------------------------------------------------------
+# Every night (00:00 unless data/nightly_update.txt says another HH:MM, or
+# "off") the "Boord Nightly Update" task runs watchdog.ps1 -Nightly: each
+# installed app with a newer signed release on GitHub is updated, this monitor
+# last. Most nights there is nothing new and nothing restarts: the watchdog
+# compares tags first, because every updater restarts its app even when it
+# finds nothing to install. The monitor registers the task itself when it
+# starts, so turning it on, moving it or turning it off needs only the file and
+# a restart of the monitor (its Restart button), never install.bat.
+NIGHTLY_TASK = "Boord Nightly Update"
+NIGHTLY_FILE = os.path.join(config.DATA_DIR, "nightly_update.txt")
+NIGHTLY_RESULT = os.path.join(config.DATA_DIR, "update_nightly.json")
+NIGHTLY_DEFAULT = "00:00"
+
+
+def parse_nightly(text: Optional[str]) -> Optional[str]:
+    """"HH:MM" from data/nightly_update.txt's text, or None when it says
+    off. No file is the default; a line that isn't a time is ignored rather
+    than guessed at, so a typo leaves the default too."""
+    if text is None:
+        return NIGHTLY_DEFAULT
+    lines = [ln.strip().lstrip("\ufeff") for ln in text.splitlines()]
+    for ln in [ln for ln in lines if ln and not ln.startswith("#")]:
+        if ln.lower() == "off":
+            return None
+        try:
+            return dt.datetime.strptime(ln, "%H:%M").strftime("%H:%M")
+        except ValueError:
+            continue
+    return NIGHTLY_DEFAULT
+
+
+def nightly_at() -> Optional[str]:
+    try:
+        with open(NIGHTLY_FILE, encoding="utf-8-sig") as fh:
+            return parse_nightly(fh.read())
+    except OSError:
+        return NIGHTLY_DEFAULT
+
+
+def _nightly_script(at: Optional[str]) -> str:
+    if at is None:
+        return (f"Unregister-ScheduledTask -TaskName {_ps_quote(NIGHTLY_TASK)} -Confirm:$false "
+                "-ErrorAction SilentlyContinue")
+    return (
+        "$ErrorActionPreference = 'Stop'; "
+        "$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "
+        + _ps_quote(f'-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "{config.WATCHDOG_PS1}" -Nightly')
+        + f"; $t = New-ScheduledTaskTrigger -Daily -At {_ps_quote(at)}; "
+        "$p = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest; "
+        # A PC that was off at midnight catches up when it starts, rather
+        # than waiting a whole day.
+        "$s = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable "
+        "-ExecutionTimeLimit (New-TimeSpan -Hours 3); "
+        f"Register-ScheduledTask -TaskName {_ps_quote(NIGHTLY_TASK)} -Action $a -Trigger $t -Principal $p "
+        "-Settings $s -Force | Out-Null"
+    )
+
+
+def ensure_nightly() -> None:
+    """Called once at start-up on the farm PC, in a thread: registering a
+    task takes a few seconds of PowerShell. A failure is logged, and the
+    dashboard's Nightly update tile says the task is missing."""
+    import logging
+    if config.ROLE != "farm" or os.name != "nt":
+        return
+    try:
+        p = subprocess.run(["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+                            "-Command", _nightly_script(nightly_at())],
+                           capture_output=True, timeout=120, creationflags=_NO_WINDOW)
+        if p.returncode != 0:
+            logging.getLogger("update").warning("could not register %s: %s", NIGHTLY_TASK,
+                                                (p.stderr or p.stdout).decode("utf-8", "replace").strip()[-300:])
+    except (OSError, subprocess.TimeoutExpired) as e:
+        logging.getLogger("update").warning("could not register %s: %s", NIGHTLY_TASK, e)
+

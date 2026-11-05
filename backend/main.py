@@ -29,6 +29,7 @@ import re
 import secrets
 import shutil
 import subprocess
+import threading
 import time
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query, Request, Response
@@ -60,6 +61,7 @@ def on_startup():
         if not os.path.exists(config.REMOTE_TOKEN_FILE):
             with open(config.REMOTE_TOKEN_FILE, "w", encoding="ascii") as fh:
                 fh.write(secrets.token_urlsafe(32))
+        threading.Thread(target=update.ensure_nightly, name="nightly-task", daemon=True).start()
     monitor.start()
 
 

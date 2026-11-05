@@ -25,6 +25,7 @@ from urllib.parse import urlparse
 
 import apps
 import config
+import update
 from system import System, parse_json
 
 STATUS_ORDER = {"fail": 3, "warn": 2, "ok": 1, "unknown": 0, "off": 0}
@@ -67,6 +68,7 @@ SHORT = {
     "guards.log": "Restarts",
     "drive.app": "Drive",
     "guards.update": "Update",
+    "guards.nightly": "Nightly",
 }
 
 # A tablet that has held a crate unsent for longer than this is worth a look.
@@ -901,10 +903,67 @@ def device_checks(sys: System, status: Optional[dict]) -> List[dict]:
     return out
 
 
+def nightly_check(sys: System, tasks: Optional[Dict[str, dict]]) -> dict:
+    """The nightly update (update.py, watchdog.ps1 -Nightly): whether it is
+    on, and what last night's run did, from data/update_nightly.json. A
+    failure warns, which puts it in the 06:00 summary; it never pushes on
+    its own, because the app it failed on is still running the release it
+    ran before."""
+    label = "Nightly update"
+    at = update.parse_nightly(sys.read_tail(update.NIGHTLY_FILE))
+    if at is None:
+        return check("guards.nightly", "guards", label, "off",
+                     "Turned off in data\\nightly_update.txt. Releases wait for the Update button or deploy.sh.",
+                     alert=False, value="off")
+    if tasks is None:
+        return check("guards.nightly", "guards", label, "unknown",
+                     "Scheduled tasks can only be read on the farm PC.", alert=False)
+    if update.NIGHTLY_TASK not in tasks:
+        return check("guards.nightly", "guards", label, "warn",
+                     f"The '{update.NIGHTLY_TASK}' task is not registered. The monitor registers it when it starts: "
+                     "restart Boord Monitor, and look at data\\server.log if it still isn't.", alert=False)
+    raw = sys.read_tail(update.NIGHTLY_RESULT)
+    last = parse_json(raw) if raw else None
+    if not isinstance(last, dict):
+        return check("guards.nightly", "guards", label, "ok",
+                     f"Installs new releases every night at {at}. It has not run yet.", alert=False, value=at)
+    ran = _parse_iso(last.get("ran"))
+    results = [r for r in (last.get("results") or []) if isinstance(r, dict)]
+    detail = []
+    for r in results:
+        st = r.get("state")
+        if st == "current":
+            detail.append(f"{r.get('name')}: already on {r.get('from') or 'its newest'}")
+        elif st == "done":
+            detail.append(f"{r.get('name')}: {r.get('from') or '?'} -> {r.get('to')}")
+        else:
+            note = r.get("note") or "see data\\update.log"
+            detail.append(f"{r.get('name')}: {st} - {note}")
+    if ran and (sys.now() - ran).total_seconds() > 26 * 3600:
+        return check("guards.nightly", "guards", label, "warn",
+                     f"Has not run for {_ago((sys.now() - ran).total_seconds())} - it should run every night at {at}.",
+                     detail, alert=False, value="late")
+    bad = [r for r in results if r.get("state") not in ("done", "current")]
+    done = [r for r in results if r.get("state") == "done"]
+    if bad:
+        names = ", ".join(str(r.get("name")) for r in bad)
+        return check("guards.nightly", "guards", label, "warn",
+                     f"Last night's update failed for {names}. They still run what they ran before; "
+                     "use Update on the app to see why, or double-click its updater on the farm PC.",
+                     detail, alert=False, value=f"{len(bad)} ✕")
+    if done:
+        said = ", ".join(f"{r.get('name')} {r.get('to')}" for r in done)
+        return check("guards.nightly", "guards", label, "ok", f"Last night installed {said}.",
+                     detail, alert=False, value=f"{len(done)} new")
+    return check("guards.nightly", "guards", label, "ok",
+                 f"Last night every app was already on its newest release. Runs every night at {at}.",
+                 detail, alert=False, value="ok")
+
+
 # --- the whole picture, per role --------------------------------------------
 
 def farm_checks(sys: System) -> List[dict]:
-    names = [a.task for a in apps.APPS] + [apps.WATCHDOG_TASK, apps.HEARTBEAT_TASK]
+    names = [a.task for a in apps.APPS] + [apps.WATCHDOG_TASK, apps.HEARTBEAT_TASK, update.NIGHTLY_TASK]
     tasks = query_tasks(sys, names)
     status, err = tailscale_status(sys)
     dnsname = dns_name(status) if status and status.get("BackendState") == "Running" else None
@@ -932,9 +991,10 @@ def farm_checks(sys: System) -> List[dict]:
                            "data\\heartbeat_url.txt and run setup_heartbeat.bat in the monitor's folder.",
                            script=config.HEARTBEAT_PS1))
     out.append(watchdog_log_check(sys))
-    update = update_check(sys)
-    if update:
-        out.append(update)
+    out.append(nightly_check(sys, tasks))
+    winupdate = update_check(sys)
+    if winupdate:
+        out.append(winupdate)
     out.extend(drive_checks(sys))
     out.extend(device_checks(sys, status))
     return out

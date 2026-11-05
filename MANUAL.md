@@ -367,6 +367,29 @@ update and checks the app reports the new version. If the Mac has no
 off-site watcher, or the update fails, it says so and prints the updater to
 double-click instead.
 
+**Every night.** At midnight the monitor looks for new releases of every
+app installed on the farm PC and installs them the same way, one after
+another, Boord Monitor itself last. Only an app with a release newer than
+the one it runs is touched: on a night with nothing new, nothing restarts.
+So a release made in the day reaches the farm by the next morning, even if
+nobody pressed Update.
+
+- The **Nightly update** tile (Checks, under the watchdog's tiles) says
+  what last night's run installed, or that everything was already current.
+- If an app's update fails, the tile warns and the 06:00 summary lists it.
+  That app keeps running the release it had. Press **Update** on it to see
+  why, or double-click its updater on the farm PC.
+- To run it at another time, put the time on one line in
+  `data\nightly_update.txt` in the monitor's folder, for example `02:30`.
+  To turn it off, put `off`. Then press **Restart** on Boord Monitor so it
+  re-registers the task. With no file it runs at `00:00`.
+- A PC that was off at midnight runs it as soon as it is back on.
+- **Boord Labour** can't be updated this way, or with the Update button,
+  while its GitHub repository is private. As SYSTEM, git has no GitHub
+  login to fetch it with. Make the repository public like the others (its
+  releases are signed, so nobody can push a release the farm would accept),
+  or keep updating it by double-clicking.
+
 **How it runs.** The monitor doesn't run the updater itself, because an
 update stops the server it updates, and updating the monitor would stop
 the very process waiting on it. It starts a scheduled task, **Boord
