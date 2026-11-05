@@ -384,11 +384,10 @@ nobody pressed Update.
   To turn it off, put `off`. Then press **Restart** on Boord Monitor so it
   re-registers the task. With no file it runs at `00:00`.
 - A PC that was off at midnight runs it as soon as it is back on.
-- **Boord Labour** can't be updated this way, or with the Update button,
-  while its GitHub repository is private. As SYSTEM, git has no GitHub
-  login to fetch it with. Make the repository public like the others (its
-  releases are signed, so nobody can push a release the farm would accept),
-  or keep updating it by double-clicking.
+- Every app's GitHub repository must stay **public**. As SYSTEM, git has
+  no GitHub login, so a private one can't be fetched and its updates fail
+  (the tile says so). Public is safe: releases are signed, so nobody else
+  can publish one the farm would install.
 
 **How it runs.** The monitor doesn't run the updater itself, because an
 update stops the server it updates, and updating the monitor would stop

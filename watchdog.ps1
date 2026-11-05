@@ -529,7 +529,7 @@ if ($Nightly) {
         $cur = Get-CurrentTag $repoRoot
         $newest = Get-NewestRemoteTag $repoRoot
         if (-not $newest) {
-            $results += @{ name = $app.Name; state = "failed"; from = $cur; to = $null; note = "Could not ask GitHub for its releases (no internet, or a private repo SYSTEM has no GitHub login for)." }
+            $results += @{ name = $app.Name; state = "failed"; from = $cur; to = $null; note = "Could not ask GitHub for its releases (no internet, or the repo is private: SYSTEM has no GitHub login)." }
             Write-Log "Nightly update of $($app.Name) FAILED: could not ask GitHub for its releases."
             continue
         }
