@@ -70,7 +70,7 @@ Also update Boord to the release that includes Boord Monitor. Its watchdog
 then also restarts the monitor if it stops, and has the `-Restart` switch
 the Restart button needs.
 
-**The admin PIN** guards two things: the Restart button, and turning on
+**The admin PIN** guards two things: the Restart and Update buttons, and turning on
 alerts for a phone. Looking needs no PIN. Anyone on the tailnet can open
 the dashboard, as with every Boord app. To change the PIN, run this in the
 `backend` folder:
@@ -340,6 +340,64 @@ The watchdog's own words appear in the restart window and in
 `data\watchdog.log`. The window follows the restart for up to 5 minutes,
 and stops following it if you close the window. Closing it doesn't stop
 the restart: look at the app's tile afterwards.
+
+### Updating an app
+
+Next to **Restart** is **Update**. It installs that app's newest release,
+exactly as double-clicking its updater on the farm PC does (for Boord,
+`update_server.bat` in `C:\Boord`), so nobody has to be at the farm PC or on
+AnyDesk. Enter the PIN if asked. The app is down for a few minutes while
+it updates. Phones keep what they scanned and send it once it is back.
+
+- It installs only a release signed with the owner's release key, the
+  same check the updater always makes. If there is nothing newer, it says
+  so and changes nothing.
+- It **refuses while another update or an install is running**.
+- If anything goes wrong before the restart, the app keeps running what
+  it ran before. The window shows the updater's own words. They are also
+  in `data\update.log` on the farm PC.
+- The window follows the update for up to 22 minutes. Updating **Boord
+  Monitor** itself restarts the monitor, so the window goes quiet for a
+  minute and then carries on.
+
+**From the owner's Mac.** `scripts/deploy.sh vX.Y`, in any app's folder,
+does the same once it has pushed the signed tag. It uses the address and
+remote token of the off-site watcher on that Mac (chapter 11), waits for the
+update and checks the app reports the new version. If the Mac has no
+off-site watcher, or the update fails, it says so and prints the updater to
+double-click instead.
+
+**Every night.** At midnight the monitor looks for new releases of every
+app installed on the farm PC and installs them the same way, one after
+another, Boord Monitor itself last. Only an app with a release newer than
+the one it runs is touched: on a night with nothing new, nothing restarts.
+So a release made in the day reaches the farm by the next morning, even if
+nobody pressed Update.
+
+- The **Nightly update** tile (Checks, under the watchdog's tiles) says
+  what last night's run installed, or that everything was already current.
+- If an app's update fails, the tile warns and the 06:00 summary lists it.
+  That app keeps running the release it had. Press **Update** on it to see
+  why, or double-click its updater on the farm PC.
+- To run it at another time, put the time on one line in
+  `data\nightly_update.txt` in the monitor's folder, for example `02:30`.
+  To turn it off, put `off`. Then press **Restart** on Boord Monitor so it
+  re-registers the task. With no file it runs at `00:00`.
+- A PC that was off at midnight runs it as soon as it is back on.
+- Every app's GitHub repository must stay **public**. As SYSTEM, git has
+  no GitHub login, so a private one can't be fetched and its updates fail
+  (the tile says so). Public is safe: releases are signed, so nobody else
+  can publish one the farm would install.
+
+**How it runs.** The monitor doesn't run the updater itself, because an
+update stops the server it updates, and updating the monitor would stop
+the very process waiting on it. It starts a scheduled task, **Boord
+Update**, which it registers itself on first use. The task runs
+`watchdog.ps1 -Update` as SYSTEM, which runs the app's updater with
+`--unattended`: no pauses and no Windows administrator prompt. As SYSTEM,
+the updater can't use the GnuPG settings and keyring of whoever normally
+double-clicks it. So the watchdog gives it Gpg4win's `gpg.exe` and its own
+keyring in `data\gnupg`, holding only the release key.
 
 ## 5. Google Drive backups
 

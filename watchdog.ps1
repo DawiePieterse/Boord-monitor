@@ -40,6 +40,19 @@ param(
     # automatic one. Exits 0 when the app is answering again, 2 when it was
     # refused because an update or install is running, 1 otherwise.
     [string]$Restart = "",
+    # Install the newest signed release of the app named in
+    # data\update_request.json, by running its own updater unattended. Run
+    # only by the "Boord Update" scheduled task, which Boord Monitor's Update
+    # button (and the owner's deploy.sh, through it) starts; see
+    # backend/update.py for why it is a task of its own. Writes
+    # data\update_status.json as it goes. Exits like -Restart: 0 done, 2
+    # stood down, 1 failed.
+    [switch]$Update,
+    # Install every app's newest signed release that is newer than what it
+    # runs, one after another. Run by the "Boord Nightly Update" task the
+    # monitor registers (midnight unless data\nightly_update.txt says
+    # otherwise). Writes data\update_nightly.json.
+    [switch]$Nightly,
     # A single missed probe is not an outage - a farm PC doing a virus scan
     # can stall a request past ten seconds. Only act after this many probes
     # in a row fail.
@@ -299,6 +312,252 @@ if ($Restart) {
     Write-Log "Restarting $($app.Name)..."
     if (Restart-App $app) { exit 0 }
     exit 1
+}
+
+# --- Installing releases (-Update, -Nightly) -------------------------------
+# Both run as SYSTEM from a scheduled task the monitor registers: "Boord
+# Update" when someone asks (the Update button, or deploy.sh through it), and
+# "Boord Nightly Update" at midnight. The updater is the app's own
+# update_*.bat, the one a person double-clicks, with --unattended: it then
+# never pauses for a key and never asks UAC for rights it already has. What
+# it installs is still only what it would install for that person - the
+# newest tag signed by the key in that app's data\release_key.fpr.
+$UpdateLog    = Join-Path (Join-Path $PSScriptRoot "data") "update.log"
+$StatusFile   = Join-Path (Join-Path $PSScriptRoot "data") "update_status.json"
+$RequestFile  = Join-Path (Join-Path $PSScriptRoot "data") "update_request.json"
+$NightlyFile  = Join-Path (Join-Path $PSScriptRoot "data") "update_nightly.json"
+$GnupgHome    = Join-Path (Join-Path $PSScriptRoot "data") "gnupg"
+$ReleaseKey   = Join-Path $PSScriptRoot "release-key.asc"
+$UpdateTimeoutMinutes = 15
+
+function Get-UtcStamp { (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss") }
+
+function Write-JsonFile($path, $obj) {
+    # UTF-8 without a BOM, through a temp file so the monitor never reads half.
+    $json = $obj | ConvertTo-Json -Depth 5
+    [System.IO.File]::WriteAllText("$path.tmp", $json, (New-Object System.Text.UTF8Encoding($false)))
+    Move-Item -Path "$path.tmp" -Destination $path -Force
+}
+
+function Save-Status($fields) {
+    $st = @{}
+    if (Test-Path $StatusFile) {
+        try {
+            $old = Get-Content -Path $StatusFile -Raw -Encoding UTF8 | ConvertFrom-Json
+            foreach ($p in $old.PSObject.Properties) { $st[$p.Name] = $p.Value }
+        } catch { }
+    }
+    foreach ($k in $fields.Keys) { $st[$k] = $fields[$k] }
+    Write-JsonFile $StatusFile $st
+}
+
+function Get-CurrentTag($repoRoot) {
+    $t = & git -C $repoRoot describe --tags --exact-match --match "v*" HEAD 2>$null
+    if ($LASTEXITCODE -eq 0) { return "$t".Trim() }
+    return $null
+}
+
+function ConvertTo-TagVersion($tag) {
+    # v3.60 -> 3.60, the order the updaters pick in (version, not date).
+    try { return [version](($tag -replace '^v', '') + $(if ($tag -match '^v\d+$') { ".0" } else { "" })) } catch { return $null }
+}
+
+function Get-NewestRemoteTag($repoRoot) {
+    # Asks GitHub without touching the checkout. The updater makes the real
+    # choice and checks the signature; this only decides whether to run it,
+    # because every updater restarts its app even when nothing is new.
+    $refs = & git -C $repoRoot ls-remote --tags --refs origin "v*" 2>$null
+    if ($LASTEXITCODE -ne 0) { return $null }
+    $best = $null; $bestV = $null
+    foreach ($line in $refs) {
+        $tag = ("$line" -split "refs/tags/")[-1].Trim()
+        $v = ConvertTo-TagVersion $tag
+        if ($v -and (-not $bestV -or $v -gt $bestV)) { $best = $tag; $bestV = $v }
+    }
+    return $best
+}
+
+function Set-UpdateEnvironment {
+    # Git and GnuPG, as SYSTEM. The person who double-clicks an updater has
+    # gpg.program in their own git config and the release key in their own
+    # keyring; SYSTEM has neither, and verify-tag would then fail exactly like
+    # a forged tag. So the updater gets a keyring of its own here, holding
+    # only the release key from this repo, and gpg.program through git's
+    # environment config. Importing the key from the checkout is safe: the
+    # updater still accepts only a signature whose fingerprint is the one
+    # pinned in that app's data\release_key.fpr, which no checkout touches.
+    # Returns $null when ready, or why not.
+    $gpg = $null
+    $sysGpg = "$(& git config --system --get gpg.program 2>$null)".Trim()
+    foreach ($c in @($sysGpg, "${env:ProgramFiles(x86)}\GnuPG\bin\gpg.exe", "$env:ProgramFiles\GnuPG\bin\gpg.exe")) {
+        if ($c -and (Test-Path $c)) { $gpg = (Resolve-Path $c).Path; break }
+    }
+    if (-not $gpg) {
+        $cmd = Get-Command gpg.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cmd) { $gpg = $cmd.Source }
+    }
+    if (-not $gpg) {
+        return "GnuPG (Gpg4win) was not found, so no signature can be checked. Install Gpg4win, or update by double-clicking the updater."
+    }
+    New-Item -ItemType Directory -Path $GnupgHome -Force | Out-Null
+    if (Test-Path $ReleaseKey) {
+        & $gpg --homedir $GnupgHome --batch --quiet --import $ReleaseKey 2>&1 | Out-Null
+    }
+    $env:GNUPGHOME = $GnupgHome
+    # Never a login prompt: as SYSTEM there is nobody to answer one, and Git
+    # Credential Manager would wait for ever. A private repo (Boord Labour)
+    # then fails at once with git's own "could not read Username" instead.
+    $env:GIT_TERMINAL_PROMPT = "0"
+    $env:GCM_INTERACTIVE = "never"
+    $env:GIT_CONFIG_COUNT = "1"
+    $env:GIT_CONFIG_KEY_0 = "gpg.program"
+    $env:GIT_CONFIG_VALUE_0 = ($gpg -replace '\\', '/')
+    return $null
+}
+
+function Invoke-AppUpdate($app, $updaterName, $repoRoot) {
+    # Runs one app's updater and waits for the app to answer. Returns
+    # @{ state = done|failed|refused; tag; lines }, and keeps
+    # data\update_status.json current for the monitor's window.
+    $updater = Join-Path $repoRoot $updaterName
+    if (-not (Test-Path $updater)) {
+        return @{ state = "failed"; tag = $null; lines = @("$updater is not there.") }
+    }
+    $reason = Get-MaintenanceReason
+    if ($reason) {
+        Write-Log "NOT updating $($app.Name): $reason."
+        return @{ state = "refused"; tag = $null; lines = @("Not started: $reason. Try again when it has finished.") }
+    }
+    Save-Status @{ state = "running"; started = (Get-UtcStamp); output = @("Updating $($app.Name) from $repoRoot...") }
+    Write-Log "Updating $($app.Name): running $updaterName --unattended."
+
+    # The updater's own window text goes to data\update.log, one generation
+    # kept, so what it said is there to read after the dashboard has moved on.
+    # Input from NUL as well: an app whose installed updater predates
+    # --unattended (its first update this way runs the old one) would
+    # otherwise sit at its first pause for ever. With no keyboard behind it,
+    # pause carries straight on.
+    if (Test-Path $UpdateLog) { Move-Item $UpdateLog "$UpdateLog.1" -Force }
+    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"`"$updater`" --unattended < NUL > `"$UpdateLog`" 2>&1`"" `
+        -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
+    # Read the handle now: without it, Windows PowerShell's Process object
+    # often has no ExitCode once the process ends, and every update would
+    # read as failed.
+    $null = $proc.Handle
+    if (-not $proc.WaitForExit($UpdateTimeoutMinutes * 60 * 1000)) {
+        try { $proc.Kill() } catch { }
+        Write-Log "  $($app.Name)'s updater FAILED to finish within $UpdateTimeoutMinutes minutes - stopped."
+        $lines = @(Get-Content $UpdateLog -ErrorAction SilentlyContinue)
+        return @{ state = "failed"; tag = (Get-CurrentTag $repoRoot); lines = ($lines + "Did not finish within $UpdateTimeoutMinutes minutes.") }
+    }
+    $code = $proc.ExitCode
+    $lines = @(Get-Content $UpdateLog -ErrorAction SilentlyContinue | Where-Object { "$_".Trim() })
+    $tag = Get-CurrentTag $repoRoot
+    if ($code -ne 0) {
+        Write-Log "  $($app.Name)'s updater FAILED with exit code $code - see data\update.log."
+        return @{ state = "failed"; tag = $tag; lines = $lines }
+    }
+    # The updater starts the server itself; give it the watchdog's own minute
+    # to answer before calling the update done.
+    $deadline = (Get-Date).AddSeconds(60)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-AppUp $app.Port $app.Health 3) {
+            Write-Log "  $($app.Name) is on $tag and answering."
+            return @{ state = "done"; tag = $tag; lines = ($lines + "$($app.Name) is on $tag and answering.") }
+        }
+        Start-Sleep -Seconds 2
+    }
+    Write-Log "  $($app.Name) FAILED: updated to $tag but did not answer on port $($app.Port)."
+    return @{ state = "failed"; tag = $tag; lines = ($lines + "Updated to $tag, but $($app.Name) is not answering on port $($app.Port).") }
+}
+
+if ($Update -or $Nightly) {
+    # Everything below reads native commands' stderr (git, gpg, the updater)
+    # and decides from exit codes; "Stop" would turn the first warning line
+    # into a crash that leaves the status saying "running" (see Restart-App).
+    $ErrorActionPreference = "Continue"
+    $env:GIT_TERMINAL_PROMPT = "0"
+    $env:GCM_INTERACTIVE = "never"
+    $envProblem = Set-UpdateEnvironment
+}
+
+if ($Update) {
+    function Finish($state, $code, $lines, $tag) {
+        Save-Status @{ state = $state; finished = (Get-UtcStamp); tag = $tag; output = @($lines | Select-Object -Last 40) }
+        exit $code
+    }
+    try {
+        $req = Get-Content -Path $RequestFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Log "Update asked for, but data\update_request.json could not be read."
+        Finish "failed" 1 @("No update request to act on (data\update_request.json).") $null
+    }
+    $app = $Apps | Where-Object { $_.Name -eq $req.app } | Select-Object -First 1
+    $row = $table.apps | Where-Object { $_.name -eq $req.app } | Select-Object -First 1
+    if (-not $app -or -not $row.updater) {
+        Finish "failed" 1 @("'$($req.app)' is not an app with an updater in apps.json.") $null
+    }
+    if ($envProblem) { Finish "failed" 1 @($envProblem) $null }
+    $repoRoot = Get-TaskRepoRoot $app.Task
+    if (-not $repoRoot) {
+        Finish "failed" 1 @("Could not find $($app.Name)'s folder from its '$($app.Task)' task - is it installed on this PC?") $null
+    }
+    Write-Log "Update of $($app.Name) asked for (Boord Monitor)."
+    $r = Invoke-AppUpdate $app $row.updater $repoRoot
+    Finish $r.state $(if ($r.state -eq "done") { 0 } elseif ($r.state -eq "refused") { 2 } else { 1 }) $r.lines $r.tag
+}
+
+if ($Nightly) {
+    # Every installed app with a newer release on GitHub, one after another,
+    # this monitor last: updating it restarts the monitor, which is fine for
+    # this task (a process of its own) but would leave the dashboard blank in
+    # the middle of the others. Each result goes to data\update_nightly.json
+    # for the dashboard's "Nightly update" tile, and a FAILED line to
+    # data\watchdog.log, which the "Restarts" tile already warns on.
+    $results = @()
+    $ordered = @($table.apps | Where-Object { -not $_.self }) + @($table.apps | Where-Object { $_.self })
+    Write-Log "Nightly update: looking for new releases."
+    foreach ($row in $ordered) {
+        $app = $Apps | Where-Object { $_.Name -eq $row.name } | Select-Object -First 1
+        if (-not $app -or -not $row.updater -or -not (Test-TaskRegistered $app.Task)) { continue }
+        $repoRoot = Get-TaskRepoRoot $app.Task
+        if (-not $repoRoot) {
+            $results += @{ name = $app.Name; state = "failed"; from = $null; to = $null; note = "Its folder could not be read from the '$($app.Task)' task." }
+            Write-Log "Nightly update of $($app.Name) FAILED: its folder could not be read from its task."
+            continue
+        }
+        $cur = Get-CurrentTag $repoRoot
+        $newest = Get-NewestRemoteTag $repoRoot
+        if (-not $newest) {
+            $results += @{ name = $app.Name; state = "failed"; from = $cur; to = $null; note = "Could not ask GitHub for its releases (no internet, or the repo is private: SYSTEM has no GitHub login)." }
+            Write-Log "Nightly update of $($app.Name) FAILED: could not ask GitHub for its releases."
+            continue
+        }
+        $curV = ConvertTo-TagVersion $cur
+        $newV = ConvertTo-TagVersion $newest
+        if ($cur -and $curV -and $newV -and $newV -le $curV) {
+            $results += @{ name = $app.Name; state = "current"; from = $cur; to = $cur; note = "" }
+            continue
+        }
+        if ($envProblem) {
+            $results += @{ name = $app.Name; state = "failed"; from = $cur; to = $null; note = $envProblem }
+            Write-Log "Nightly update of $($app.Name) FAILED: $envProblem"
+            continue
+        }
+        Save-Status @{ app = $row.key; name = $app.Name; state = "queued"; by = "nightly"; requested = (Get-UtcStamp);
+                       started = $null; finished = $null; tag = $null; output = @() }
+        $r = Invoke-AppUpdate $app $row.updater $repoRoot
+        Save-Status @{ state = $r.state; finished = (Get-UtcStamp); tag = $r.tag; output = @($r.lines | Select-Object -Last 40) }
+        $note = if ($r.state -eq "done") { "" } else { (@($r.lines) | Select-Object -Last 1) }
+        $results += @{ name = $app.Name; state = $r.state; from = $cur; to = $r.tag; note = "$note" }
+        if ($r.state -ne "done") { Write-Log "Nightly update of $($app.Name) FAILED ($($r.state)): $note" }
+    }
+    Write-JsonFile $NightlyFile @{ ran = (Get-UtcStamp); results = @($results) }
+    $bad = @($results | Where-Object { $_.state -ne "done" -and $_.state -ne "current" })
+    $did = @($results | Where-Object { $_.state -eq "done" })
+    Write-Log ("Nightly update: {0} installed, {1} already current, {2} failed." -f $did.Count, @($results | Where-Object { $_.state -eq "current" }).Count, $bad.Count)
+    if ($bad.Count) { exit 1 }
+    exit 0
 }
 
 # --- Don't fight the boot ------------------------------------------------

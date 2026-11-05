@@ -1,5 +1,14 @@
 @echo off
 setlocal EnableDelayedExpansion
+:: --unattended: Boord Monitor's Update button (and the owner's deploy.sh,
+:: through it) runs this from its "Boord Update" scheduled task, as SYSTEM,
+:: with nobody at the screen. It then never stops at a pause for a key
+:: that nobody will press, and never asks UAC for rights: SYSTEM has them,
+:: and a prompt nobody can answer would hang it. Everything it checks -
+:: above all the release signature - it checks exactly as before. Run by
+:: hand, nothing changes.
+set "UNATTENDED="
+for %%A in (%*) do if /i "%%~A"=="--unattended" set "UNATTENDED=1"
 :: Boord Monitor - double-click this file to update to the newest signed
 :: release from GitHub, install any new dependencies, and restart the
 :: monitor so the update takes effect. The monitor has no database, so
@@ -21,6 +30,10 @@ net session >nul 2>&1
 if %errorLevel% neq 0 (
     echo This needs administrator rights to restart the server - requesting them now...
     echo If Windows shows a User Account Control prompt, click "Yes".
+    if defined UNATTENDED (
+        echo Run unattended without administrator rights - stopping. Boord Monitor runs it as SYSTEM.
+        exit /b 1
+    )
     powershell -Command "Start-Process -FilePath '%~f0' -Verb RunAs"
     exit /b
 )
@@ -57,7 +70,7 @@ if not exist "%FPR_FILE%" (
     echo.
     echo The server has NOT been restarted and is still running whatever it
     echo was running before.
-    pause
+    if not defined UNATTENDED pause
     exit /b 1
 )
 for /f "usebackq eol=# tokens=1 delims= " %%F in ("%FPR_FILE%") do (
@@ -66,7 +79,7 @@ for /f "usebackq eol=# tokens=1 delims= " %%F in ("%FPR_FILE%") do (
 if not defined RELEASE_FPR (
     echo %FPR_FILE% is empty - expected a 40-character key fingerprint.
     echo Not updating.
-    pause
+    if not defined UNATTENDED pause
     exit /b 1
 )
 echo     Only releases signed by !RELEASE_FPR! will be accepted.
@@ -93,7 +106,7 @@ if errorlevel 1 (
     echo.
     echo Boord's own install.bat does both of these for you, and this app
     echo uses the same setting.
-    pause
+    if not defined UNATTENDED pause
     exit /b 1
 )
 
@@ -122,7 +135,7 @@ if %errorLevel% neq 0 (
     echo key: this window is elevated, and an elevated session run as a
     echo DIFFERENT administrator account has a different %%USERPROFILE%%, with
     echo no key in its .ssh folder.
-    pause
+    if not defined UNATTENDED pause
     exit /b 1
 )
 
@@ -136,7 +149,7 @@ if not defined NEWTAG (
     echo.
     echo No release tags ^(v*^) found in this repository. Nothing to update to.
     echo The server has NOT been restarted.
-    pause
+    if not defined UNATTENDED pause
     exit /b 1
 )
 
@@ -187,7 +200,7 @@ if "!CURTAG!"=="!NEWTAG!" (
         )
         echo.
         echo Nothing has been changed. The server is still running !CURTAG!.
-        pause
+        if not defined UNATTENDED pause
         exit /b 1
     )
     echo     Signature OK.
@@ -202,7 +215,7 @@ if "!CURTAG!"=="!NEWTAG!" (
         echo.
         echo Checkout failed - check the error above. The server has NOT been
         echo restarted, so it's still running whatever it was before.
-        pause
+        if not defined UNATTENDED pause
         exit /b 1
     )
 )
@@ -232,7 +245,7 @@ if errorlevel 1 (
     echo This is nearly always no internet, or pip being blocked. Try again
     echo once the machine is online:
     echo     update_monitor_server.bat
-    pause
+    if not defined UNATTENDED pause
     exit /b 1
 )
 
@@ -271,7 +284,7 @@ if errorlevel 1 (
     echo release from before. Read the message above for what holds the
     echo port, stop it, and run this again.
     echo.
-    pause
+    if not defined UNATTENDED pause
     exit /b 1
 )
 
@@ -284,7 +297,9 @@ echo ==^> Checking it came back up...
 set OK=
 for /l %%i in (1,1,20) do (
     if not defined OK (
-        timeout /t 1 /nobreak >nul
+        rem A one-second wait that needs no keyboard: timeout /t quits at once
+        rem when run unattended by Boord Monitor, which would end this check early.
+        ping -n 2 127.0.0.1 >nul
         powershell -NoProfile -Command "try { if ((Invoke-WebRequest -Uri 'http://localhost:8050/' -UseBasicParsing -TimeoutSec 3).StatusCode -eq 200) { exit 0 } } catch {}; exit 1" && set OK=1
     )
 )
@@ -294,4 +309,4 @@ if defined OK (
     echo     Server did not answer in 20s - data\server.log says why.
 )
 echo.
-pause
+if not defined UNATTENDED pause

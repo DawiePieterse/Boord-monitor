@@ -22,6 +22,9 @@ const REFRESH_MS = 30000;
 // How long the Restart dialog follows a restart before giving up on it. See
 // askRestart for why this is a bit over twice the watchdog's 150 s.
 const RESTART_WAIT_MS = 5 * 60 * 1000;
+// An update reinstalls dependencies and migrates before the restart; the
+// monitor itself gives up on one after 20 minutes (update.py).
+const UPDATE_WAIT_MS = 22 * 60 * 1000;
 const VIEWS = ["status", "services", "incidents", "checks"];
 
 let session = { role: "farm", admin: false };
@@ -263,7 +266,10 @@ function sloCard(s) {
     chartFor(s.check_id, "ms", lat.objective_ms));
   const actions = [];
   if (c.url && c.status !== "off") actions.push(el("a", { class: "btn btn-quiet", href: c.url, target: "_blank", rel: "noopener" }, "Open"));
-  if (c.app && c.restartable && last.role === "farm") actions.push(el("button", { class: "btn btn-quiet", type: "button", onclick: () => askRestart(c) }, "Restart"));
+  if (c.app && c.restartable && last.role === "farm") {
+    actions.push(el("button", { class: "btn btn-quiet", type: "button", onclick: () => askRestart(c) }, "Restart"));
+    actions.push(el("button", { class: "btn btn-quiet", type: "button", onclick: () => askRestart(c, "update") }, "Update"));
+  }
   actions.push(el("button", { class: "btn btn-quiet", type: "button", onclick: () => showCheck(c) }, "Details"));
 
   return el("section", { class: `card svc svc-${c.status}` },
@@ -599,6 +605,7 @@ function showCheck(c) {
   }
   if (c.app && c.restartable && last && last.role === "farm") {
     actions.push(el("button", { class: "btn", type: "button", onclick: () => { $("sheet").close(); askRestart(c); } }, "Restart"));
+    actions.push(el("button", { class: "btn", type: "button", onclick: () => { $("sheet").close(); askRestart(c, "update"); } }, "Update"));
   }
   // The last day of this check: a line where it has a number (answer time,
   // how full), and its status strip either way.
@@ -793,14 +800,30 @@ async function needAdmin() {
 
 let restartRun = 0;
 
-async function askRestart(c) {
+// The same dialog restarts an app or installs its newest release: both are a
+// job on the farm PC that the dialog starts and then follows to its end.
+// Update runs the app's own update_*.bat, unattended, from the "Boord
+// Update" task (update.py): it installs only a tag signed by the release
+// key, exactly as double-clicking it on the farm PC would.
+const JOBS = {
+  restart: { verb: "Restart", post: "restart", status: "/api/restart", wait: RESTART_WAIT_MS, busy: "Restarting…",
+    warning: (c) => `Everyone using ${c.label} loses it for up to a minute while it restarts. ` +
+      "Phones keep what they have scanned and send it once it is back. " +
+      "Boord's watchdog does the restart, so it will refuse while an update is running." },
+  update: { verb: "Update", post: "update", status: "/api/update", wait: UPDATE_WAIT_MS, busy: "Updating…",
+    warning: (c) => `Installs the newest signed release of ${c.label}, as double-clicking its updater on the farm PC would. ` +
+      `Everyone using ${c.label} loses it for a few minutes while it updates. ` +
+      "Phones keep what they have scanned and send it once it is back. " +
+      "If anything goes wrong before the restart, nothing changes." },
+};
+
+async function askRestart(c, kind) {
+  const job = JOBS[kind || "restart"];
   if (!(await needAdmin())) return;
   const dialog = $("restart-dialog");
-  $("restart-title").textContent = `Restart ${c.label}?`;
-  $("restart-warning").textContent =
-    `Everyone using ${c.label} loses it for up to a minute while it restarts. ` +
-    "Phones keep what they have scanned and send it once it is back. " +
-    "Boord's watchdog does the restart, so it will refuse while an update is running.";
+  $("restart-title").textContent = `${job.verb} ${c.label}?`;
+  $("restart-warning").textContent = job.warning(c);
+  $("restart-go").textContent = job.verb;
   $("restart-output").hidden = true;
   $("restart-go").hidden = false;
   $("restart-go").disabled = false;
@@ -812,7 +835,7 @@ async function askRestart(c) {
     out.hidden = false;
     out.textContent = "Starting…";
     try {
-      await Monitor.api(`/api/apps/${encodeURIComponent(c.app)}/restart`, { method: "POST" });
+      await Monitor.api(`/api/apps/${encodeURIComponent(c.app)}/${job.post}`, { method: "POST" });
     } catch (err) {
       out.textContent = Monitor.errorText(err);
       $("restart-go").disabled = false;
@@ -825,32 +848,34 @@ async function askRestart(c) {
     // also stops when the dialog is closed and on any 4xx; a dropped
     // connection (5xx, timeout) is retried, because the PC is busy
     // restarting things and may be slow to answer.
-    const deadline = Date.now() + RESTART_WAIT_MS;
+    const deadline = Date.now() + job.wait;
     const run = ++restartRun;
     const watching = () => dialog.open && run === restartRun;
-    let job = null;
+    let state = null;
     while (watching()) {
       await new Promise((r) => setTimeout(r, 2000));
       if (!watching()) return;
       if (Date.now() > deadline) {
-        out.textContent += "\n\nStill not finished after 5 minutes. Close this and look at the app's tile - " +
+        out.textContent += `\n\nStill not finished after ${Math.round(job.wait / 60000)} minutes. Close this and look at the app's tile - ` +
           "the watchdog log on the farm PC has the rest.";
         return;
       }
       try {
-        job = await Monitor.api("/api/restart");
+        state = await Monitor.api(job.status);
       } catch (e) {
         if (e.status >= 400 && e.status < 500) {
-          out.textContent += `\n\n${e.status === 401 ? "Signed out - sign in again to follow the restart." : Monitor.errorText(e)}`;
+          out.textContent += `\n\n${e.status === 401 ? "Signed out - sign in again to follow it." : Monitor.errorText(e)}`;
           if (e.status === 401) loadSession();
           return;
         }
         continue;
       }
       if (!watching()) return;
-      out.textContent = (job.output || []).join("\n") || "Restarting…";
-      if (job.state && job.state !== "running") {
-        out.textContent += `\n\n${{ done: "Done.", refused: "Refused - see above.", failed: "Failed - see above." }[job.state] || job.state}`;
+      // An update that is restarting this monitor answers nothing for a
+      // while; the loop above retries through it.
+      out.textContent = (state.output || []).join("\n") || job.busy;
+      if (state.state && state.state !== "running" && state.state !== "queued") {
+        out.textContent += `\n\n${{ done: "Done.", refused: "Refused - see above.", failed: "Failed - see above." }[state.state] || state.state}`;
         load(true);
         return;
       }

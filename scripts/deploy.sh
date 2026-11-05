@@ -21,7 +21,15 @@
 # Then it pushes main if it is ahead, signs the tag, verifies the signature
 # is the release key's (deleting the tag if not), and pushes the tag.
 #
-# Usage:  scripts/deploy.sh v3.51
+# Last, it installs the release on the farm PC through Boord Monitor's Update
+# (Monitor 2.2+): the same updater a person double-clicks there, run
+# unattended as SYSTEM, which installs only a tag signed by the release key.
+# It asks with the remote token this Mac's off-site watcher already holds
+# (its launchd plist), waits for the update, and checks the app reports the
+# new tag. If that can't be done, the tag is still out and it says what to
+# run on the farm PC instead; --no-farm skips this step.
+#
+# Usage:  scripts/deploy.sh v3.51 [--no-farm]
 set -euo pipefail
 
 # --- this app ------------------------------------------------------------------
@@ -29,6 +37,10 @@ NAME="Boord Monitor"
 VERSION_FILE="frontend/api.js"
 FARM_DIR='C:\boord-monitor'
 UPDATER="update_monitor_server.bat"
+# Its key in Boord Monitor's apps.json, and its address on the tailnet, for
+# installing it on the farm PC once the tag is out.
+MONITOR_KEY="monitor"
+APP_URL="https://bekfontein-server.taile32cb0.ts.net:8050/"
 REOPEN="the dashboard on each phone"
 # The release key, the same in every Boord repo and in data\release_key.fpr on
 # every farm PC. Changing it is a key rotation, done everywhere at once.
@@ -39,6 +51,8 @@ cd "$REPO_ROOT"
 fail() { echo "Error: $*" >&2; exit 1; }
 
 TAG="${1:-}"
+NO_FARM=""
+[ "${2:-}" = "--no-farm" ] && NO_FARM=1
 [ -n "$TAG" ] || fail "usage: scripts/deploy.sh <tag>   e.g. scripts/deploy.sh v3.51   (newest: $(git tag --list 'v*' --sort=-v:refname | head -1))"
 [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]] || fail "tag must look like v3.51: $UPDATER picks the newest 'v*' tag by version order."
 
@@ -95,6 +109,77 @@ git push -q origin "refs/tags/$TAG"
 
 echo
 echo "Deployed $NAME $TAG to GitHub."
-echo "On the farm PC: in $FARM_DIR double-click $UPDATER. If this release changed"
-echo "install.ps1, double-click install.bat as well. Then fully close and reopen"
-echo "$REOPEN."
+
+# --- install it on the farm PC ------------------------------------------------
+# The off-site watcher's plist holds the farm monitor's address and the remote
+# token (remote/install_remote.sh in Boord Monitor). BOORD_MONITOR_URL and
+# BOORD_MONITOR_TOKEN stand in for it on a machine without one.
+farm_steps() {
+  echo "On the farm PC: in $FARM_DIR double-click $UPDATER. If this release changed"
+  echo "install.ps1, double-click install.bat as well. Then fully close and reopen"
+  echo "$REOPEN."
+}
+json_field() { python3 -c 'import json,sys; v=json.load(sys.stdin).get(sys.argv[1]); print("\n".join(v) if isinstance(v, list) else ("" if v is None else v))' "$1" 2>/dev/null; }
+
+MON_URL="${BOORD_MONITOR_URL:-}"
+MON_TOKEN="${BOORD_MONITOR_TOKEN:-}"
+PLIST="$HOME/Library/LaunchAgents/com.boord.monitor-remote.plist"
+if [ -z "$MON_URL" ] && [ -f "$PLIST" ] && [ -x /usr/libexec/PlistBuddy ]; then
+  MON_URL="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:MONITOR_FARM_URL' "$PLIST" 2>/dev/null || true)"
+  MON_TOKEN="$(/usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables:MONITOR_REMOTE_TOKEN' "$PLIST" 2>/dev/null || true)"
+fi
+MON_URL="${MON_URL%/}"
+
+if [ -n "$NO_FARM" ]; then
+  echo; echo "--no-farm: not installing it on the farm PC."; farm_steps; exit 0
+fi
+if [ -z "$MON_URL" ] || [ -z "$MON_TOKEN" ]; then
+  echo; echo "No Boord Monitor address and token on this Mac (no off-site watcher), so it is not installed yet."
+  farm_steps; exit 0
+fi
+
+echo
+echo "==> Installing $TAG on the farm PC (Boord Monitor's Update)"
+# The farm fetches tags from GitHub itself; the push above is already there.
+RESP="$(curl -sS --max-time 90 -X POST -H "X-Monitor-Token: $MON_TOKEN" -w '\n%{http_code}' \
+  "$MON_URL/api/apps/$MONITOR_KEY/update" 2>&1 || true)"
+CODE="$(printf '%s' "$RESP" | tail -n 1)"
+BODY="$(printf '%s' "$RESP" | sed '$d')"
+if [ "$CODE" != "200" ]; then
+  echo "Error: the farm's Boord Monitor did not start the update (HTTP ${CODE:-none}): $(printf '%s' "$BODY" | json_field detail || printf '%s' "$BODY")" >&2
+  case "$CODE" in 404|405) echo "(The farm's Boord Monitor is older than 2.2, which added Update. Install Monitor 2.2 there once by hand.)" >&2 ;; esac
+  echo "The tag is out. Install it by hand:" >&2
+  farm_steps >&2; exit 3
+fi
+REQUESTED="$(printf '%s' "$BODY" | json_field requested || true)"
+
+# Follow it. Monitor's own update restarts the monitor, so a few failed polls
+# in a row are expected; only the deadline ends the wait.
+DEADLINE=$(( $(date +%s) + 20 * 60 ))
+STATE="queued"; SHOWN=""
+while [ "$(date +%s)" -lt "$DEADLINE" ]; do
+  sleep 10
+  JOB="$(curl -fsS --max-time 15 -H "X-Monitor-Token: $MON_TOKEN" "$MON_URL/api/update" 2>/dev/null || true)"
+  [ -n "$JOB" ] || continue
+  [ "$(printf '%s' "$JOB" | json_field requested)" = "$REQUESTED" ] || continue
+  STATE="$(printf '%s' "$JOB" | json_field state || true)"
+  [ "$STATE" != "$SHOWN" ] && { echo "    $STATE"; SHOWN="$STATE"; }
+  case "$STATE" in queued|running) continue ;; esac
+  break
+done
+if [ "$STATE" != "done" ]; then
+  echo "Error: the farm update ended '$STATE'. What the updater said:" >&2
+  printf '%s' "${JOB:-}" | json_field output | sed 's/^/    | /' >&2
+  echo "The tag is out; nothing on the farm changed unless the lines above say so. Install it by hand:" >&2
+  farm_steps >&2; exit 3
+fi
+
+# The proof is the app itself saying it runs the new tag.
+LIVE="$(curl -fsS --max-time 15 "${APP_URL%/}/api/version" 2>/dev/null | json_field tag || true)"
+if [ "$LIVE" != "$TAG" ]; then
+  echo "Error: the update finished, but ${APP_URL%/}/api/version reports '${LIVE:-nothing}', not $TAG." >&2
+  farm_steps >&2; exit 3
+fi
+echo "==> The farm PC runs $NAME $TAG."
+echo "If this release changed install.ps1, double-click install.bat in $FARM_DIR on the"
+echo "farm PC as well. Then fully close and reopen $REOPEN."

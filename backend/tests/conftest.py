@@ -68,7 +68,8 @@ def serve_for(mapping, funnel=()):
 
 GOOD_SERVE = {443: 8000, 8443: 8010, 9443: 8020, 8030: 8030, 8040: 8040, 8050: 8050, 8060: 8060}
 ALL_TASKS = ["Boord Server", "Boord Owner Server", "Boord Notes Server", "Kudde Server",
-             "Boord Labour Server", "Boord Packhouse Server", "Boord Watchdog", "Boord Heartbeat"]
+             "Boord Labour Server", "Boord Packhouse Server", "Boord Watchdog", "Boord Heartbeat",
+             "Boord Nightly Update"]
 
 
 class FakeSystem:
@@ -94,6 +95,7 @@ class FakeSystem:
         self.disk_free = 120 * 1024 ** 3
         self.uptime = 3 * 86400
         self.log_text = None
+        self.files = {}
         self.drive_running = True
         self.folders = {}  # folder -> newest file's (path, mtime) or None; absent = can't open
         self.boord = None  # what boord_devices returns
@@ -163,6 +165,12 @@ class FakeSystem:
         return self.uptime
 
     def read_tail(self, path, max_bytes=65536):
+        # Files by path (the nightly update's), else the watchdog log, which
+        # is what every older test means.
+        if path in self.files:
+            return self.files[path]
+        if path.endswith(("update_nightly.json", "nightly_update.txt")):
+            return None
         return self.log_text
 
     def newest_file(self, folder, max_files=5000):

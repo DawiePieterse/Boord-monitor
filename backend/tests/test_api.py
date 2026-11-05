@@ -175,3 +175,109 @@ def test_updater_dependency_check_matches_requirements():
         bat = fh.read()
     imported = set(re.search(r'-c "import ([^"]+)"', bat).group(1).replace(" ", "").split(","))
     assert imported == reqs
+
+
+# --- update -----------------------------------------------------------------------
+# The Update button and the owner's deploy.sh both end here. The monitor only
+# queues the request and starts the "Boord Update" task; the task (watchdog.ps1
+# -Update) writes the status file that these read back.
+
+def _fake_task(monkeypatch, tmp_path, fail=False):
+    import update
+    monkeypatch.setattr(update, "REQUEST_FILE", str(tmp_path / "update_request.json"))
+    monkeypatch.setattr(update, "STATUS_FILE", str(tmp_path / "update_status.json"))
+    started = []
+
+    def start_task():
+        if fail:
+            raise ValueError("Could not start the 'Boord Update' task: access denied")
+        started.append(True)
+    monkeypatch.setattr(update, "_start_task", start_task)
+    return update, started
+
+
+def test_update_needs_the_pin_or_the_token(client, monkeypatch, tmp_path):
+    _fake_task(monkeypatch, tmp_path)
+    assert client.post("/api/apps/boord/update").status_code == 401
+    assert client.post("/api/apps/boord/update", headers={"X-Monitor-Token": "wrong"}).status_code == 401
+    assert client.get("/api/update").status_code == 401
+
+
+def test_update_queues_the_app_and_starts_the_task(admin_client, monkeypatch, tmp_path):
+    import json
+    update, started = _fake_task(monkeypatch, tmp_path)
+    r = admin_client.post("/api/apps/packhouse/update")
+    assert r.status_code == 200, r.text
+    assert r.json()["state"] == "queued" and r.json()["by"] == "phone"
+    assert started == [True]
+    # The watchdog finds the app by its name in apps.json, as -Restart does.
+    assert json.load(open(update.REQUEST_FILE))["app"] == "Boord Packhouse"
+    assert admin_client.get("/api/update").json()["state"] == "queued"
+    # One at a time.
+    r = admin_client.post("/api/apps/boord/update")
+    assert r.status_code == 409 and "still updating" in r.json()["detail"]
+
+
+def test_deploy_starts_an_update_with_the_remote_token(client, monkeypatch, tmp_path):
+    import config
+    update, started = _fake_task(monkeypatch, tmp_path)
+    with open(config.REMOTE_TOKEN_FILE, encoding="ascii") as fh:
+        token = fh.read().strip()
+    r = client.post("/api/apps/boord/update", headers={"X-Monitor-Token": token})
+    assert r.status_code == 200 and r.json()["by"] == "deploy"
+    assert client.get("/api/update", headers={"X-Monitor-Token": token}).json()["name"] == "Boord"
+
+
+def test_update_reads_what_the_watchdog_wrote(admin_client, monkeypatch, tmp_path):
+    update, _ = _fake_task(monkeypatch, tmp_path)
+    # PowerShell 5.1 writes UTF-8 with a BOM.
+    with open(update.STATUS_FILE, "w", encoding="utf-8-sig") as fh:
+        fh.write('{"app": "boord", "name": "Boord", "state": "done", "tag": "v3.60", '
+                 '"requested": "2026-11-05T08:00:00", "output": ["Boord is on v3.60 and answering."]}')
+    job = admin_client.get("/api/update").json()
+    assert (job["state"], job["tag"]) == ("done", "v3.60")
+    # Finished, so another can start.
+    assert admin_client.post("/api/apps/boord/update").status_code == 200
+
+
+def test_a_request_the_task_never_picked_up_does_not_block_for_ever(admin_client, monkeypatch, tmp_path):
+    update, _ = _fake_task(monkeypatch, tmp_path)
+    with open(update.STATUS_FILE, "w", encoding="utf-8") as fh:
+        fh.write('{"app": "boord", "name": "Boord", "state": "queued", "requested": "2020-01-01T00:00:00", "output": []}')
+    assert admin_client.get("/api/update").json()["state"] == "failed"
+    assert admin_client.post("/api/apps/boord/update").status_code == 200
+
+
+def test_a_task_that_cannot_start_says_so(admin_client, monkeypatch, tmp_path):
+    _fake_task(monkeypatch, tmp_path, fail=True)
+    r = admin_client.post("/api/apps/boord/update")
+    assert r.status_code == 409 and "access denied" in r.json()["detail"]
+    assert admin_client.get("/api/update").json()["state"] == "failed"
+
+
+def test_the_update_task_runs_this_repos_watchdog(monkeypatch):
+    import subprocess
+    import update
+    seen = {}
+
+    class Done:
+        returncode = 0
+        stdout = b""
+        stderr = b""
+    monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: seen.setdefault("cmd", cmd) and Done())
+    update._start_task()
+    script = seen["cmd"][-1]
+    assert config.WATCHDOG_PS1 in script and "-Update" in script
+    assert "Register-ScheduledTask -TaskName 'Boord Update'" in script and "Start-ScheduledTask" in script
+    assert "-UserId 'SYSTEM'" in script
+
+
+def test_every_updater_can_run_unattended():
+    """The task runs each app's updater with --unattended; the watchdog
+    passes it whatever apps.json names. Only Monitor's own is in this repo."""
+    import os
+    path = os.path.join(config.REPO_ROOT, "update_monitor_server.bat")
+    text = open(path, encoding="utf-8").read()
+    assert '"--unattended" set "UNATTENDED=1"' in text
+    bare = [ln for ln in text.splitlines() if ln.strip().lower() == "pause"]
+    assert not bare, "a pause that would hang the unattended update"
