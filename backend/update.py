@@ -68,6 +68,9 @@ def current() -> Optional[dict]:
             job = json.load(fh)
     except (OSError, ValueError):
         return None
+    # Monitor 2.2's watchdog wrote each line as Windows PowerShell's string
+    # object ({"value": ..., "PSPath": ...}); keep reading those as the text.
+    job["output"] = [ln.get("value", "") if isinstance(ln, dict) else str(ln) for ln in (job.get("output") or [])]
     if job.get("state") == "queued" and _age_s(job.get("requested")) > STALE_QUEUED_S:
         job["state"] = "failed"
         job.setdefault("output", []).append(

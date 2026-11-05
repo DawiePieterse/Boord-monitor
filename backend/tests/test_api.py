@@ -281,3 +281,14 @@ def test_every_updater_can_run_unattended():
     assert '"--unattended" set "UNATTENDED=1"' in text
     bare = [ln for ln in text.splitlines() if ln.strip().lower() == "pause"]
     assert not bare, "a pause that would hang the unattended update"
+
+
+def test_update_output_written_as_powershell_objects_reads_as_text(admin_client, monkeypatch, tmp_path):
+    """Windows PowerShell 5.1 turned Get-Content's lines into objects in the
+    JSON, and the dashboard showed "[object Object]" for each."""
+    update, _ = _fake_task(monkeypatch, tmp_path)
+    with open(update.STATUS_FILE, "w", encoding="utf-8-sig") as fh:
+        fh.write('{"app": "kudde", "name": "Kudde", "state": "done", "requested": "2026-11-05T08:00:00", "output": ['
+                 '{"value": "==> Fetching tags", "PSPath": "C:\\\\boord-monitor\\\\data\\\\update.log", "ReadCount": 1},'
+                 '"Kudde is on v0.11 and answering."]}')
+    assert admin_client.get("/api/update").json()["output"] == ["==> Fetching tags", "Kudde is on v0.11 and answering."]

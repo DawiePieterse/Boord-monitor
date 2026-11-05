@@ -415,6 +415,13 @@ function Set-UpdateEnvironment {
     return $null
 }
 
+function Read-UpdateLog {
+    # As plain strings. Get-Content's lines carry PSPath, ReadCount and the
+    # like, and Windows PowerShell 5.1's ConvertTo-Json writes each one as an
+    # object of those, which the dashboard showed as "[object Object]".
+    @(Get-Content $UpdateLog -ErrorAction SilentlyContinue | ForEach-Object { [string]$_ })
+}
+
 function Invoke-AppUpdate($app, $updaterName, $repoRoot) {
     # Runs one app's updater and waits for the app to answer. Returns
     # @{ state = done|failed|refused; tag; lines }, and keeps
@@ -447,11 +454,11 @@ function Invoke-AppUpdate($app, $updaterName, $repoRoot) {
     if (-not $proc.WaitForExit($UpdateTimeoutMinutes * 60 * 1000)) {
         try { $proc.Kill() } catch { }
         Write-Log "  $($app.Name)'s updater FAILED to finish within $UpdateTimeoutMinutes minutes - stopped."
-        $lines = @(Get-Content $UpdateLog -ErrorAction SilentlyContinue)
+        $lines = @(Read-UpdateLog)
         return @{ state = "failed"; tag = (Get-CurrentTag $repoRoot); lines = ($lines + "Did not finish within $UpdateTimeoutMinutes minutes.") }
     }
     $code = $proc.ExitCode
-    $lines = @(Get-Content $UpdateLog -ErrorAction SilentlyContinue | Where-Object { "$_".Trim() })
+    $lines = @(Read-UpdateLog | Where-Object { $_.Trim() })
     $tag = Get-CurrentTag $repoRoot
     if ($code -ne 0) {
         Write-Log "  $($app.Name)'s updater FAILED with exit code $code - see data\update.log."
