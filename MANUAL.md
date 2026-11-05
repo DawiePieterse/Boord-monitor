@@ -332,7 +332,14 @@ the same care as an automatic one:
 
 - It **refuses while an update or install is running**. Starting a server
   on top of a half-finished database migration is worse than leaving it
-  down.
+  down. The refusal says which app's updater is running and since when,
+  for example "Kudde's updater (update_server.bat) is running (PID 15040,
+  since 5 Nov 07:12)".
+- An updater window **open for over an hour** doesn't count. That is a
+  window someone left at its last "Press any key to continue", not an
+  update, and it used to block every restart and update until somebody
+  noticed it. The watchdog notes it in its log; close it when you are next
+  at the farm PC.
 - It refuses to kill a process it can't prove belongs to that app.
 - It reports success only once the app answers again.
 

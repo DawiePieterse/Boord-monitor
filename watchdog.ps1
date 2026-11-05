@@ -89,6 +89,14 @@ $PauseFile = Join-Path (Join-Path $PSScriptRoot "data") "watchdog.pause"
 # starts it again puts a live server on top of a half-migrated schema. Every
 # app's updater comes from apps.json (its "updater"), so an app added there
 # is stood down for without anyone remembering to add it here.
+# The apps' own updaters, filled in from apps.json below. An updater still
+# open after this many minutes is a window someone left at its last "Press
+# any key to continue", not an update: a real one is done in a few minutes,
+# and the monitor's unattended one is stopped after 15. Standing down for it
+# blocked every restart and every update until someone noticed the window
+# (Kudde's first Update button, November 2026).
+$UpdaterMarkers = @()
+$StaleUpdaterMinutes = 60
 $MaintenanceMarkers = @(
     "install.ps1",
     "uninstall.ps1",
@@ -167,6 +175,19 @@ function Test-TaskRegistered($taskName) {
     return ($LASTEXITCODE -eq 0)
 }
 
+function Get-UpdaterApp($cmdLine, $updaterName) {
+    # Which app's updater a command line runs, for a refusal a person can act
+    # on: three apps share the name update_server.bat, so the name alone
+    # doesn't say. The app whose folder (read from its scheduled task, as
+    # everywhere here) is in the command line; else the file name.
+    foreach ($row in $table.apps) {
+        if ($row.updater -ne $updaterName) { continue }
+        $root = Get-TaskRepoRoot $row.task
+        if ($root -and $cmdLine -like "*$root*") { return "$($row.name)'s updater ($updaterName)" }
+    }
+    return "'$updaterName'"
+}
+
 function Get-MaintenanceReason {
     if (Test-Path $PauseFile) {
         $age = (Get-Date) - (Get-Item $PauseFile).LastWriteTime
@@ -192,9 +213,18 @@ function Get-MaintenanceReason {
         if ($p.ProcessId -eq $PID) { continue }
         if ($p.CommandLine -like "*watchdog.ps1*") { continue }
         foreach ($marker in $MaintenanceMarkers) {
-            if ($p.CommandLine -like "*$marker*") {
-                return "'$marker' is running (PID $($p.ProcessId))"
+            if ($p.CommandLine -notlike "*$marker*") { continue }
+            $started = $p.CreationDate
+            $since = if ($started) { ", since " + $started.ToString("d MMM HH:mm") } else { "" }
+            if ($UpdaterMarkers -contains $marker) {
+                $who = Get-UpdaterApp $p.CommandLine $marker
+                if ($started -and ((Get-Date) - $started).TotalMinutes -gt $StaleUpdaterMinutes) {
+                    Write-Log "NOTE: ignoring $who (PID $($p.ProcessId)$since) - open over $StaleUpdaterMinutes minutes, so a window left at 'Press any key'. Close it on the farm PC."
+                    continue
+                }
+                return "$who is running (PID $($p.ProcessId)$since)"
             }
+            return "'$marker' is running (PID $($p.ProcessId)$since)"
         }
     }
     return $null
@@ -277,6 +307,7 @@ try {
     })
     foreach ($u in ($table.apps | ForEach-Object { $_.updater } | Where-Object { $_ } | Sort-Object -Unique)) {
         $MaintenanceMarkers += $u
+        $UpdaterMarkers += $u
     }
 } catch {
     Write-Log "FAILED to read $AppsFile - nothing watched this run: $($_.Exception.Message)"
@@ -415,6 +446,13 @@ function Set-UpdateEnvironment {
     return $null
 }
 
+function Read-UpdateLog {
+    # As plain strings. Get-Content's lines carry PSPath, ReadCount and the
+    # like, and Windows PowerShell 5.1's ConvertTo-Json writes each one as an
+    # object of those, which the dashboard showed as "[object Object]".
+    @(Get-Content $UpdateLog -ErrorAction SilentlyContinue | ForEach-Object { [string]$_ })
+}
+
 function Invoke-AppUpdate($app, $updaterName, $repoRoot) {
     # Runs one app's updater and waits for the app to answer. Returns
     # @{ state = done|failed|refused; tag; lines }, and keeps
@@ -447,11 +485,11 @@ function Invoke-AppUpdate($app, $updaterName, $repoRoot) {
     if (-not $proc.WaitForExit($UpdateTimeoutMinutes * 60 * 1000)) {
         try { $proc.Kill() } catch { }
         Write-Log "  $($app.Name)'s updater FAILED to finish within $UpdateTimeoutMinutes minutes - stopped."
-        $lines = @(Get-Content $UpdateLog -ErrorAction SilentlyContinue)
+        $lines = @(Read-UpdateLog)
         return @{ state = "failed"; tag = (Get-CurrentTag $repoRoot); lines = ($lines + "Did not finish within $UpdateTimeoutMinutes minutes.") }
     }
     $code = $proc.ExitCode
-    $lines = @(Get-Content $UpdateLog -ErrorAction SilentlyContinue | Where-Object { "$_".Trim() })
+    $lines = @(Read-UpdateLog | Where-Object { $_.Trim() })
     $tag = Get-CurrentTag $repoRoot
     if ($code -ne 0) {
         Write-Log "  $($app.Name)'s updater FAILED with exit code $code - see data\update.log."
