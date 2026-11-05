@@ -40,6 +40,14 @@ param(
     # automatic one. Exits 0 when the app is answering again, 2 when it was
     # refused because an update or install is running, 1 otherwise.
     [string]$Restart = "",
+    # Install the newest signed release of the app named in
+    # data\update_request.json, by running its own updater unattended. Run
+    # only by the "Boord Update" scheduled task, which Boord Monitor's Update
+    # button (and the owner's deploy.sh, through it) starts; see
+    # backend/update.py for why it is a task of its own. Writes
+    # data\update_status.json as it goes. Exits like -Restart: 0 done, 2
+    # stood down, 1 failed.
+    [switch]$Update,
     # A single missed probe is not an outage - a farm PC doing a virus scan
     # can stall a request past ten seconds. Only act after this many probes
     # in a row fail.
@@ -299,6 +307,143 @@ if ($Restart) {
     Write-Log "Restarting $($app.Name)..."
     if (Restart-App $app) { exit 0 }
     exit 1
+}
+
+# --- An update asked for by hand ------------------------------------------
+# Runs as SYSTEM from the "Boord Update" task. The updater is the app's own
+# update_*.bat, the one a person double-clicks, with --unattended: it then
+# never pauses for a key and never asks UAC for rights it already has. What
+# it installs is still only what it would install for that person - the
+# newest tag signed by the key in that app's data\release_key.fpr.
+if ($Update) {
+    $UpdateLog    = Join-Path (Join-Path $PSScriptRoot "data") "update.log"
+    $StatusFile   = Join-Path (Join-Path $PSScriptRoot "data") "update_status.json"
+    $RequestFile  = Join-Path (Join-Path $PSScriptRoot "data") "update_request.json"
+    $GnupgHome    = Join-Path (Join-Path $PSScriptRoot "data") "gnupg"
+    $ReleaseKey   = Join-Path $PSScriptRoot "release-key.asc"
+    $UpdateTimeoutMinutes = 15
+    # Everything below reads native commands' stderr (git, gpg, the updater)
+    # and decides from exit codes; "Stop" would turn the first warning line
+    # into a crash that leaves the status saying "running" (see Restart-App).
+    $ErrorActionPreference = "Continue"
+
+    function Save-Status($fields) {
+        $st = @{}
+        if (Test-Path $StatusFile) {
+            try {
+                $old = Get-Content -Path $StatusFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                foreach ($p in $old.PSObject.Properties) { $st[$p.Name] = $p.Value }
+            } catch { }
+        }
+        foreach ($k in $fields.Keys) { $st[$k] = $fields[$k] }
+        $json = $st | ConvertTo-Json -Depth 4
+        [System.IO.File]::WriteAllText("$StatusFile.tmp", $json, (New-Object System.Text.UTF8Encoding($false)))
+        Move-Item -Path "$StatusFile.tmp" -Destination $StatusFile -Force
+    }
+    function Get-UtcStamp { (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss") }
+    function Finish($state, $code, $lines) {
+        Save-Status @{ state = $state; finished = (Get-UtcStamp); output = @($lines | Select-Object -Last 40) }
+        exit $code
+    }
+
+    try {
+        $req = Get-Content -Path $RequestFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    } catch {
+        Write-Log "Update asked for, but data\update_request.json could not be read."
+        Finish "failed" 1 @("No update request to act on (data\update_request.json).")
+    }
+    $app = $Apps | Where-Object { $_.Name -eq $req.app } | Select-Object -First 1
+    $row = $table.apps | Where-Object { $_.name -eq $req.app } | Select-Object -First 1
+    if (-not $app -or -not $row.updater) {
+        Finish "failed" 1 @("'$($req.app)' is not an app with an updater in apps.json.")
+    }
+    $repoRoot = Get-TaskRepoRoot $app.Task
+    if (-not $repoRoot) {
+        Finish "failed" 1 @("Could not find $($app.Name)'s folder from its '$($app.Task)' task - is it installed on this PC?")
+    }
+    $updater = Join-Path $repoRoot $row.updater
+    if (-not (Test-Path $updater)) {
+        Finish "failed" 1 @("$updater is not there.")
+    }
+    $reason = Get-MaintenanceReason
+    if ($reason) {
+        Write-Log "NOT updating $($app.Name) as asked: $reason."
+        Finish "refused" 2 @("Not started: $reason. Try again when it has finished.")
+    }
+
+    Save-Status @{ state = "running"; started = (Get-UtcStamp); output = @("Updating $($app.Name) from $repoRoot...") }
+    Write-Log "Update of $($app.Name) asked for (Boord Monitor): running $($row.updater) --unattended."
+
+    # Git and GnuPG, as SYSTEM. The person who double-clicks an updater has
+    # gpg.program in their own git config and the release key in their own
+    # keyring; SYSTEM has neither, and verify-tag would then fail exactly like
+    # a forged tag. So the updater gets a keyring of its own here, holding
+    # only the release key from this repo, and gpg.program through git's
+    # environment config. Importing the key from the checkout is safe: the
+    # updater still accepts only a signature whose fingerprint is the one
+    # pinned in that app's data\release_key.fpr, which no checkout touches.
+    # Where Gpg4win puts it, or whatever git's machine-wide config names.
+    $gpg = $null
+    $sysGpg = "$(& git config --system --get gpg.program 2>$null)".Trim()
+    foreach ($c in @($sysGpg, "${env:ProgramFiles(x86)}\GnuPG\bin\gpg.exe", "$env:ProgramFiles\GnuPG\bin\gpg.exe")) {
+        if ($c -and (Test-Path $c)) { $gpg = (Resolve-Path $c).Path; break }
+    }
+    if (-not $gpg) {
+        $cmd = Get-Command gpg.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($cmd) { $gpg = $cmd.Source }
+    }
+    if (-not $gpg) {
+        Finish "failed" 1 @("GnuPG (Gpg4win) was not found, so no signature can be checked. Install Gpg4win, or update by double-clicking $($row.updater).")
+    }
+    New-Item -ItemType Directory -Path $GnupgHome -Force | Out-Null
+    if (Test-Path $ReleaseKey) {
+        & $gpg --homedir $GnupgHome --batch --quiet --import $ReleaseKey 2>&1 | Out-Null
+    }
+    $env:GNUPGHOME = $GnupgHome
+    $env:GIT_CONFIG_COUNT = "1"
+    $env:GIT_CONFIG_KEY_0 = "gpg.program"
+    $env:GIT_CONFIG_VALUE_0 = ($gpg -replace '\\', '/')
+
+    # The updater's own window text goes to data\update.log, one generation
+    # kept, so what it said is there to read after the dashboard has moved on.
+    # Input from NUL as well: an app whose installed updater predates
+    # --unattended (its first update this way runs the old one) would
+    # otherwise sit at its first pause for ever. With no keyboard behind it,
+    # pause carries straight on.
+    if (Test-Path $UpdateLog) { Move-Item $UpdateLog "$UpdateLog.1" -Force }
+    $proc = Start-Process -FilePath "cmd.exe" -ArgumentList "/c `"`"$updater`" --unattended < NUL > `"$UpdateLog`" 2>&1`"" `
+        -WorkingDirectory $repoRoot -WindowStyle Hidden -PassThru
+    if (-not $proc.WaitForExit($UpdateTimeoutMinutes * 60 * 1000)) {
+        try { $proc.Kill() } catch { }
+        Write-Log "  $($app.Name)'s updater did not finish within $UpdateTimeoutMinutes minutes - stopped."
+        $lines = @(Get-Content $UpdateLog -ErrorAction SilentlyContinue)
+        Finish "failed" 1 ($lines + "Did not finish within $UpdateTimeoutMinutes minutes.")
+    }
+    $code = $proc.ExitCode
+    $lines = @(Get-Content $UpdateLog -ErrorAction SilentlyContinue | Where-Object { "$_".Trim() })
+    $tag = $null
+    $t = & git -C $repoRoot describe --tags --exact-match 2>$null
+    if ($LASTEXITCODE -eq 0) { $tag = "$t".Trim() }
+    if ($code -ne 0) {
+        Write-Log "  $($app.Name)'s updater stopped with exit code $code - see data\update.log."
+        Save-Status @{ tag = $tag }
+        Finish "failed" 1 $lines
+    }
+    # The updater starts the server itself; give it the watchdog's own minute
+    # to answer before calling the update done.
+    $deadline = (Get-Date).AddSeconds(60)
+    $up = $false
+    while ((Get-Date) -lt $deadline) {
+        if (Test-AppUp $app.Port $app.Health 3) { $up = $true; break }
+        Start-Sleep -Seconds 2
+    }
+    Save-Status @{ tag = $tag }
+    if (-not $up) {
+        Write-Log "  $($app.Name) updated to $tag but is not answering on port $($app.Port)."
+        Finish "failed" 1 ($lines + "Updated to $tag, but $($app.Name) is not answering on port $($app.Port).")
+    }
+    Write-Log "  $($app.Name) is on $tag and answering."
+    Finish "done" 0 ($lines + "$($app.Name) is on $tag and answering.")
 }
 
 # --- Don't fight the boot ------------------------------------------------

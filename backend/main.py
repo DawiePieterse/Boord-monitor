@@ -42,6 +42,7 @@ import metrics
 import monitor
 import push
 import restart
+import update
 import slo
 import store
 from admin_auth import COOKIE, COOKIE_MAX_AGE, require_admin
@@ -236,6 +237,42 @@ def restart_app(key: str):
 @app.get("/api/restart", dependencies=[Depends(require_admin)])
 def restart_status():
     return restart.current() or {}
+
+
+def _remote_token_ok(given: str) -> bool:
+    try:
+        with open(config.REMOTE_TOKEN_FILE, encoding="ascii") as fh:
+            expected = fh.read().strip()
+    except OSError:
+        expected = ""
+    return bool(expected) and hmac.compare_digest(given.strip(), expected)
+
+
+def _admin_or_token(request: Request, x_monitor_token: str = Header("")) -> str:
+    """Who may start an update: a phone signed in with the PIN, or the
+    owner's Mac at the end of scripts/deploy.sh, which sends the remote token
+    its off-site watcher already holds. Returns which, for the status line.
+    The token can only ever install the newest release signed by the owner's
+    key - the updater refuses anything else - so it gains no more than the
+    PIN's Update button already gives."""
+    if x_monitor_token and _remote_token_ok(x_monitor_token):
+        return "deploy"
+    require_admin(request)
+    return "phone"
+
+
+@app.post("/api/apps/{key}/update", dependencies=[Depends(_farm_only)])
+def update_app(key: str, by: str = Depends(_admin_or_token)):
+    """Install this app's newest signed release (update.py)."""
+    try:
+        return update.start(key, by)
+    except ValueError as e:
+        raise HTTPException(409, str(e))
+
+
+@app.get("/api/update")
+def update_status(by: str = Depends(_admin_or_token)):
+    return update.current() or {}
 
 
 class SubscribeIn(BaseModel):
