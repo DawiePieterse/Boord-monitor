@@ -119,7 +119,9 @@ farm_steps() {
   echo "install.ps1, double-click install.bat as well. Then fully close and reopen"
   echo "$REOPEN."
 }
-json_field() { python3 -c 'import json,sys; v=json.load(sys.stdin).get(sys.argv[1]); print("\n".join(v) if isinstance(v, list) else ("" if v is None else v))' "$1" 2>/dev/null; }
+# A list is printed a line each. Monitor 2.2 wrote each output line as
+# PowerShell's string object, {"value": "...", ...}, so take its value.
+json_field() { python3 -c 'import json,sys; v=json.load(sys.stdin).get(sys.argv[1]); print("\n".join(x.get("value", "") if isinstance(x, dict) else str(x) for x in v) if isinstance(v, list) else ("" if v is None else v))' "$1" 2>/dev/null; }
 
 MON_URL="${BOORD_MONITOR_URL:-}"
 MON_TOKEN="${BOORD_MONITOR_TOKEN:-}"
