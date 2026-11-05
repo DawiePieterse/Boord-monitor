@@ -191,9 +191,12 @@ Merging to `main` changes nothing on the farm. A release is a signed tag, and th
    ```sh
    scripts/release.sh vX.Y && git push origin vX.Y
    ```
-   Or, as one non-interactive command with the same checks: `scripts/deploy.sh vX.Y`. That is what "deploy" runs (see the section below).
+   Or, as one non-interactive command with the same checks: `scripts/deploy.sh vX.Y`. That is what "deploy" runs (see the section below), and it does step 4 as well.
    Never move or reuse a released tag. Fix a wrong one with the next version.
-4. **On the farm PC**, in `C:\boord-monitor`, double-click **`update_monitor_server.bat`**. It verifies the signature, stops the server with `stop_server.ps1`, installs dependencies, and starts it again. If it stops with an error, nothing has changed. Read the message; never check the tag out by hand.
+4. **The farm PC installs it.** `deploy.sh` does this itself: it asks Boord Monitor (2.2 or later) on the farm PC to run `update_monitor_server.bat` in `C:\boord-monitor` unattended, as SYSTEM, waits for it, and checks that `/api/version` reports the new tag. It reaches Monitor with the address and token of the off-site watcher on the Mac (Monitor's `remote/install_remote.sh`). If it can't, or the update fails, it exits 3 and says why, and the release still reaches the farm one of three other ways:
+   - **Monitor's Update button** on this app (Services tab or the app's sheet, admin PIN) runs the same unattended update now and shows the updater's output.
+   - **The nightly run** at 00:00 (Monitor's "Boord Nightly Update" task) installs any app whose newest signed tag is newer than what it runs, so a release out by evening is on the farm by morning. Monitor's "Nightly update" tile shows what it did.
+   - **By hand**, on the farm PC in `C:\boord-monitor`, double-click **`update_monitor_server.bat`**. It verifies the signature, stops the server with `stop_server.ps1`, installs dependencies, and starts it again. If it stops with an error, nothing has changed. Read the message; never check the tag out by hand.
 5. **If the release changed `install.ps1`** (its notes say "run install.bat once more"), double-click `install.bat` as well. The updater does not rewrite the launcher or the task.
 6. **Check from your Mac:** `curl -s https://bekfontein-server.taile32cb0.ts.net:8050/api/version` should show `"tag":"vX.Y","state":"release"`.
 7. **Close and reopen the dashboard on each phone so it loads the new version.**
