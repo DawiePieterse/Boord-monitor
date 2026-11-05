@@ -292,3 +292,14 @@ def test_update_output_written_as_powershell_objects_reads_as_text(admin_client,
                  '{"value": "==> Fetching tags", "PSPath": "C:\\\\boord-monitor\\\\data\\\\update.log", "ReadCount": 1},'
                  '"Kudde is on v0.11 and answering."]}')
     assert admin_client.get("/api/update").json()["output"] == ["==> Fetching tags", "Kudde is on v0.11 and answering."]
+
+
+def test_the_monitor_can_update_itself(admin_client, monkeypatch, tmp_path):
+    """deploy.sh v2.3 in Monitor's own repo was refused: "There is no app by
+    that name", because the monitor is apps.SELF, not one of apps.APPS."""
+    import json
+    import apps
+    update, started = _fake_task(monkeypatch, tmp_path)
+    r = admin_client.post(f"/api/apps/{apps.SELF.key}/update")
+    assert r.status_code == 200, r.text
+    assert json.load(open(update.REQUEST_FILE))["app"] == "Boord Monitor" and started == [True]

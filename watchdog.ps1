@@ -440,9 +440,11 @@ function Set-UpdateEnvironment {
     # then fails at once with git's own "could not read Username" instead.
     $env:GIT_TERMINAL_PROMPT = "0"
     $env:GCM_INTERACTIVE = "never"
-    $env:GIT_CONFIG_COUNT = "1"
-    $env:GIT_CONFIG_KEY_0 = "gpg.program"
-    $env:GIT_CONFIG_VALUE_0 = ($gpg -replace '\\', '/')
+    # The GitHub-over-HTTPS rewrite is set by the caller as entries 0 and
+    # 1; gpg.program is entry 2.
+    $env:GIT_CONFIG_COUNT = "3"
+    $env:GIT_CONFIG_KEY_2 = "gpg.program"
+    $env:GIT_CONFIG_VALUE_2 = ($gpg -replace '\\', '/')
     return $null
 }
 
@@ -516,6 +518,17 @@ if ($Update -or $Nightly) {
     $ErrorActionPreference = "Continue"
     $env:GIT_TERMINAL_PROMPT = "0"
     $env:GCM_INTERACTIVE = "never"
+    # GitHub over HTTPS, whatever the clone's remote says, for every git
+    # call from here on (the nightly ls-remote and the updaters' fetch). A
+    # clone made over SSH (git@github.com:...) needs a key and a known_hosts
+    # entry only its owner's profile has: as SYSTEM every fetch failed with
+    # "Host key verification failed" (Boord's first unattended update,
+    # November 2026). The repos are public, so HTTPS needs no login at all.
+    $env:GIT_CONFIG_COUNT = "2"
+    $env:GIT_CONFIG_KEY_0 = "url.https://github.com/.insteadOf"
+    $env:GIT_CONFIG_VALUE_0 = "git@github.com:"
+    $env:GIT_CONFIG_KEY_1 = "url.https://github.com/.insteadOf"
+    $env:GIT_CONFIG_VALUE_1 = "ssh://git@github.com/"
     $envProblem = Set-UpdateEnvironment
 }
 

@@ -404,7 +404,7 @@ Update**, which it registers itself on first use. The task runs
 `--unattended`: no pauses and no Windows administrator prompt. As SYSTEM,
 the updater can't use the GnuPG settings and keyring of whoever normally
 double-clicks it. So the watchdog gives it Gpg4win's `gpg.exe` and its own
-keyring in `data\gnupg`, holding only the release key.
+keyring in `data\gnupg`, holding only the release key. Git also fetches from GitHub over HTTPS during these runs, even for a folder that was cloned over SSH (`git@github.com:...`): SYSTEM has no SSH key, and the repositories are public.
 
 ## 5. Google Drive backups
 

@@ -116,7 +116,9 @@ def _start_task() -> None:
 
 def start(app_key: str, by: str = "") -> dict:
     """Raises ValueError with a sentence for the person if it can't start."""
-    app = apps.BY_KEY.get(app_key)
+    # The monitor itself is apps.SELF, not in BY_KEY (it isn't probed as an
+    # app), but deploy.sh and the nightly run update it like any other.
+    app = apps.BY_KEY.get(app_key) or (apps.SELF if app_key == apps.SELF.key else None)
     if app is None:
         raise ValueError("There is no app by that name")
     if config.ROLE != "farm":
