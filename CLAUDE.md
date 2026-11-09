@@ -14,13 +14,13 @@ This app is one of seven that run together on the farm PC (`bekfontein-server`),
 
 | App | Repo (`DawiePieterse/…`) | What it does | Port | Tailnet address | Mac folder | Farm PC folder |
 |---|---|---|---|---|---|---|
-| Boord | `Boord` | Harvest capture and picker pay per kg: field tablets, pack-house receiving, admin office. The hub. | 8000 | `https://bekfontein-server.taile32cb0.ts.net/` | `~/Documents/Projects/Boord` | `C:\Boord` |
-| Boord Owner | `boordowner` | The owner's view: season vs history, weather, risk, crop estimate, optional AI. | 8010 | `https://bekfontein-server.taile32cb0.ts.net:8443/` | `~/Documents/Projects/BoordOwner` | `C:\BoordOwner` |
-| Boord Notes | `boord-notes` | Private farm notebook for Andre and his son, offline-first, optional AI. | 8020 | `https://bekfontein-server.taile32cb0.ts.net:9443/` | `~/Documents/Projects/BoordNotes` | `C:\bekfontein-farm-notebook` |
-| Kudde | `Kudde` | Cattle records: animals and their events. | 8030 | `https://bekfontein-server.taile32cb0.ts.net:8030/` | `~/Documents/Projects/Kudde` | `C:\Kudde` |
-| Boord Labour | `Boord-labour` | Packhouse time clock: badge scans at the door, hourly pay with overtime. | 8040 | `https://bekfontein-server.taile32cb0.ts.net:8040/` | `~/Documents/Projects/Boord-labour` | `C:\Boord-labour` |
-| **Boord Monitor** (this app) | `Boord-monitor` | Watches the PC and the other apps: status page, SLOs, incidents, Web Push alerts, a Restart button; runs the watchdog and heartbeat. | 8050 | `https://bekfontein-server.taile32cb0.ts.net:8050/` | `~/Documents/Projects/Boord-monitor` | `C:\boord-monitor` |
-| Boord Packhouse | `boord-packhouse` | After receiving to the truck: sulfur, acid, lines, pre-pack, cold store and PPECB, dispatch. | 8060 | `https://bekfontein-server.taile32cb0.ts.net:8060/` | `~/Documents/Projects/Boord-packhouse` | `C:\Boord-packhouse` |
+| Boord | `Boord` | Harvest capture and picker pay per kg: field tablets, pack-house receiving, admin office. The hub. | 8000 | `https://bekfontein-server.taile32cb0.ts.net/` | `~/Projects/Boord` | `C:\Boord` |
+| Boord Owner | `boordowner` | The owner's view: season vs history, weather, risk, crop estimate, optional AI. | 8010 | `https://bekfontein-server.taile32cb0.ts.net:8443/` | `~/Projects/BoordOwner` | `C:\BoordOwner` |
+| Boord Notes | `boord-notes` | Private farm notebook for Andre and his son, offline-first, optional AI. | 8020 | `https://bekfontein-server.taile32cb0.ts.net:9443/` | `~/Projects/BoordNotes` | `C:\bekfontein-farm-notebook` |
+| Kudde | `Kudde` | Cattle records: animals and their events. | 8030 | `https://bekfontein-server.taile32cb0.ts.net:8030/` | `~/Projects/Kudde` | `C:\Kudde` |
+| Boord Labour | `Boord-labour` | Packhouse time clock: badge scans at the door, hourly pay with overtime. | 8040 | `https://bekfontein-server.taile32cb0.ts.net:8040/` | `~/Projects/Boord-labour` | `C:\Boord-labour` |
+| **Boord Monitor** (this app) | `Boord-monitor` | Watches the PC and the other apps: status page, SLOs, incidents, Web Push alerts, a Restart button; runs the watchdog and heartbeat. | 8050 | `https://bekfontein-server.taile32cb0.ts.net:8050/` | `~/Projects/Boord-monitor` | `C:\boord-monitor` |
+| Boord Packhouse | `boord-packhouse` | After receiving to the truck: sulfur, acid, lines, pre-pack, cold store and PPECB, dispatch. | 8060 | `https://bekfontein-server.taile32cb0.ts.net:8060/` | `~/Projects/Boord-packhouse` | `C:\Boord-packhouse` |
 
 **How they depend on each other:**
 - **Boord is the hub.** Its `data/boord.db` is opened read-only by Owner (harvest, lots, blocks, suppliers), Labour (the worker register, and Boord's `data/photos` for faces), Monitor (tablet station, last sync and outbox) and Packhouse (received lots, blocks, suppliers, workers).
@@ -129,7 +129,7 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
 - **Copied from Boord Labour:** `install.ps1`, `update_monitor_server.bat` and `scripts/release.sh`. Keep fixes flowing between the copies. The updater's import list must equal `requirements.txt` (a test checks this).
 - **`install.ps1` adds the repo folder to Git's machine-wide `safe.directory`.** The monitor runs as SYSTEM, and the folder belongs to the admin account that cloned it, so Git refused it as "dubious ownership" and `/api/version` reported `"tag": null`. Boord Owner's and Boord Notes' installers carry the same block, so change all three together.
 - **Releases are signed tags made by the owner, from an up-to-date `main`.** `release.sh` checks that `VERSION` matches the tag. Run `git pull --ff-only origin main` first anyway: a stale clone is how Boord Notes' `v2.16` ended up on a months-old commit.
-- **The off-site watcher** runs on the owner's Mac from `~/Documents/Projects/Boord-monitor` (launchd `com.boord.monitor-remote`). Moving that folder breaks both the launchd job and the `.venv`. After a move, delete `backend/.venv` and re-run `remote/install_remote.sh` with the same URL and token.
+- **The off-site watcher** runs on the owner's Mac from `~/Projects/Boord-monitor` (launchd `com.boord.monitor-remote`). Moving that folder breaks both the launchd job and the `.venv`. After a move, delete `backend/.venv` and re-run `remote/install_remote.sh` with the same URL and token.
 
 ## Installing and deploying
 
@@ -137,7 +137,7 @@ CI (`.github/workflows/ci.yml`) runs pytest on 3.9 and 3.12, and the smoke test.
 
 | | |
 |---|---|
-| Your Mac (the only clone to release from) | `~/Documents/Projects/Boord-monitor` |
+| Your Mac (the only clone to release from) | `~/Projects/Boord-monitor` |
 | Farm PC folder | `C:\boord-monitor` |
 | Farm PC scheduled task | "Boord Monitor Server", runs as SYSTEM at boot |
 | Port on the farm PC | `127.0.0.1:8050` |
@@ -170,7 +170,7 @@ Only for a new PC or a reinstall. An app that is already running is updated, not
 
 The off-site watcher is installed on your Mac, not the farm PC, from the folder above:
 ```sh
-cd ~/Documents/Projects/Boord-monitor
+cd ~/Projects/Boord-monitor
 read -s "TOKEN?Remote token (hidden): "; echo   # from data\remote_token.txt on the farm PC
 remote/install_remote.sh https://bekfontein-server.taile32cb0.ts.net:8050 "$TOKEN"
 ```
@@ -183,7 +183,7 @@ Merging to `main` changes nothing on the farm. A release is a signed tag, and th
 1. **Merge the PR on GitHub.** A frontend change must already bump `VERSION` in `frontend/api.js` and `CACHE` in `frontend/service-worker.js`.
 2. **On your Mac, bring the clone up to date.** This step is what stops a tag landing on an old commit:
    ```sh
-   cd ~/Documents/Projects/Boord-monitor && git checkout main && git pull --ff-only origin main
+   cd ~/Projects/Boord-monitor && git checkout main && git pull --ff-only origin main
    git log -1 --format='%h %s'                  # the merge you expect
    grep -m1 'VERSION:' frontend/api.js   # the version you are releasing
    ```
@@ -214,7 +214,7 @@ Merging to `main` changes nothing on the farm. A release is a signed tag, and th
 1. Do step 1 in the cloud session: the tests, `VERSION` and `CACHE`. Merge the PR if the owner asked for it.
 2. Call `list_computer_folders` and look for this app's Mac folder (the "Mac folder" column of the suite table above, matched by its last part, e.g. `Boord-packhouse`) on the Mac, online.
 3. If it is there, call `request_computer_folder` for it. The owner approves it on a trusted device; that approval is the only question asked. Once attached, run step 2 there, in that folder: `scripts/deploy.sh vX.Y`. It pulls `main` itself, so the merge just made is what gets signed. Then step 3. If it refuses because that clone isn't clean or isn't on `main`, report what it said and stop: it is the owner's working copy, so never stash, reset or switch branches there without asking.
-4. If the folder isn't listed, is offline, or the request is refused or not answered, say why in one line and hand over `scripts/deploy.sh vX.Y` to run on the Mac. Folders are shared from the Claude desktop app on the Mac (Settings, Claude Code, Remote Control); the seven app folders in `~/Documents/Projects` are the ones to share.
+4. If the folder isn't listed, is offline, or the request is refused or not answered, say why in one line and hand over `scripts/deploy.sh vX.Y` to run on the Mac. Folders are shared from the Claude desktop app on the Mac (Settings, Claude Code, Remote Control); the seven app folders in `~/Projects` are the ones to share.
 
 Never sign anywhere but the Mac, and never push an unsigned tag: the updater picks the newest `v*` tag and stops when its signature fails, which blocks this app's updates on the farm PC until a higher signed tag lands. `deploy.sh` is the same file in every Boord repo apart from the configuration block at its top; a fix to it flows to all seven.
 
