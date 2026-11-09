@@ -283,6 +283,21 @@ def test_every_updater_can_run_unattended():
     assert not bare, "a pause that would hang the unattended update"
 
 
+def test_updater_starts_the_new_file_after_the_checkout():
+    """cmd reads a batch file off the disk as it runs, so once the checkout has
+    replaced the updater it must start the new file from the top, as the last
+    thing in that block: anything after it would be read at a stale byte of
+    the new file (Boord Packhouse v0.66 ended "failed" that way, the server never restarted)."""
+    import os
+    import re
+    path = os.path.join(config.REPO_ROOT, "update_monitor_server.bat")
+    text = open(path, encoding="utf-8").read()
+    assert re.search(r'git checkout --force "!NEWTAG!"\n.*?\n    "%~f0" %\* --checked-out\n\)\n\n'
+                     r'echo\.\necho ==\^> Installing', text, re.S)
+    # ...and a second time round stops, rather than checking out for ever.
+    assert '"%%~A"=="--checked-out"' in text
+
+
 def test_update_output_written_as_powershell_objects_reads_as_text(admin_client, monkeypatch, tmp_path):
     """Windows PowerShell 5.1 turned Get-Content's lines into objects in the
     JSON, and the dashboard showed "[object Object]" for each."""

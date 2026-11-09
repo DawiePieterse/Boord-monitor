@@ -218,6 +218,24 @@ if "!CURTAG!"=="!NEWTAG!" (
         if not defined UNATTENDED pause
         exit /b 1
     )
+    rem That checkout may have replaced this very file, and cmd reads a batch
+    rem file off the disk as it goes: after this block it would carry on at
+    rem the same byte of the new file, which is some other line. Installing
+    rem Boord Packhouse v0.66 ended that way, in the middle of the signature
+    rem message, with the server never restarted. So start the file now on
+    rem disk from its top: it finds itself on the newest tag, skips this
+    rem block and does the rest. There is no call, so this run ends here.
+    rem Keep these lines the last in the block and able to run outside it:
+    rem an updater from before them carries on in the middle of them.
+    for %%A in (%*) do if /i "%%~A"=="--checked-out" (
+        echo.
+        echo Checked out !NEWTAG! twice and still not on it - stopping rather
+        echo than going round again. The server has NOT been restarted.
+        if not defined UNATTENDED pause
+        exit /b 1
+    )
+    echo ==^> Carrying on in the updater !NEWTAG! brought...
+    "%~f0" %* --checked-out
 )
 
 echo.
