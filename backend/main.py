@@ -39,6 +39,7 @@ from pydantic import BaseModel
 
 import admin_auth
 import config
+import tunnel_gate
 import metrics
 import monitor
 import push
@@ -52,6 +53,14 @@ from system import System
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 
 app = FastAPI(title="Boord Monitor")
+
+# Who may reach this app through the Cloudflare Tunnel (tunnel_gate.py): the
+# paired-device roles it admits there. Tailscale is not asked anything.
+# The office and the owner only. A field tablet has no business with the farm PC's status
+# page, and Restart and Update are still the admin PIN's job (admin_auth.py),
+# exactly as they are over Tailscale.
+TUNNEL_ROLES = ("admin", "owner")
+tunnel_gate.install(app, TUNNEL_ROLES)
 
 
 @app.on_event("startup")
