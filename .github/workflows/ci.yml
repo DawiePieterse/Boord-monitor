@@ -25,7 +25,7 @@ jobs:
         working-directory: backend
 
   smoke:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # pinned: ubuntu-latest (26.04) lacks Python 3.9 and Playwright 1.56 support
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
