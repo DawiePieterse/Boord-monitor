@@ -7,7 +7,10 @@ on:
 
 jobs:
   backend:
-    runs-on: ubuntu-latest
+    # Pinned, not ubuntu-latest: that label moved to Ubuntu 26.04 (Nov 2026),
+    # for which setup-python has no 3.9 build, so the job that guards the
+    # farm's minimum Python died at setup. Move it only with that floor.
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         # 3.9 is the farm PC's minimum; 3.12 is what a fresh install gets.
